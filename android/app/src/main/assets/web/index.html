@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Musicrr Remote Control</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Pairing Screen -->
+        <div id="pairing-screen" class="screen">
+            <div class="pairing-container">
+                <h1>Musicrr Remote Control</h1>
+                <p>Enter the pairing token from your device:</p>
+                <input type="text" id="pairing-token" placeholder="Pairing token" maxlength="12">
+                <button id="pair-button">Connect</button>
+                <p id="pairing-error" class="error hidden"></p>
+            </div>
+        </div>
+
+        <!-- Main Control Screen -->
+        <div id="main-screen" class="screen hidden">
+            <!-- Header -->
+            <header>
+                <h1>Musicrr</h1>
+                <div id="connection-status" class="status-indicator">
+                    <span class="status-dot"></span>
+                    <span id="status-text">Connecting...</span>
+                </div>
+            </header>
+
+            <!-- Now Playing -->
+            <section id="now-playing" class="card">
+                <div id="cover-art-container">
+                    <img id="cover-art" src="" alt="Album cover" class="hidden">
+                    <div id="cover-art-placeholder">🎵</div>
+                </div>
+                <div id="track-info">
+                    <h2 id="track-title">No track playing</h2>
+                    <p id="track-artist">—</p>
+                    <p id="track-album" class="secondary">—</p>
+                </div>
+                <div id="progress-container">
+                    <div id="progress-bar">
+                        <div id="progress-fill"></div>
+                    </div>
+                    <div id="time-display">
+                        <span id="current-time">0:00</span>
+                        <span id="total-time">0:00</span>
+                    </div>
+                </div>
+                <div id="controls">
+                    <button id="prev-button" class="control-btn" title="Previous">⏮</button>
+                    <button id="play-pause-button" class="control-btn primary" title="Play/Pause">▶</button>
+                    <button id="next-button" class="control-btn" title="Next">⏭</button>
+                </div>
+            </section>
+
+            <!-- Queue -->
+            <section id="queue-section" class="card">
+                <h3>Queue <span id="queue-count">(0)</span></h3>
+                <div id="queue-list"></div>
+            </section>
+
+            <!-- Library (Collapsible) -->
+            <section id="library-section" class="card">
+                <h3>
+                    Library
+                    <button id="library-toggle" class="toggle-btn">▼</button>
+                </h3>
+                <div id="library-content" class="hidden">
+                    <div id="library-tabs">
+                        <button class="tab-btn active" data-tab="artists">Artists</button>
+                        <button class="tab-btn" data-tab="albums">Albums</button>
+                        <button class="tab-btn" data-tab="tracks">Tracks</button>
+                    </div>
+                    <div id="library-content-area">
+                        <div id="artists-tab" class="tab-content active"></div>
+                        <div id="albums-tab" class="tab-content"></div>
+                        <div id="tracks-tab" class="tab-content"></div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

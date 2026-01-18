@@ -1,0 +1,78 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader ->
+        localProperties.load(reader)
+    }
+}
+
+def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
+if (flutterVersionCode == null) {
+    flutterVersionCode = '1'
+}
+
+def flutterVersionName = localProperties.getProperty('flutter.versionName')
+if (flutterVersionName == null) {
+    flutterVersionName = '1.0'
+}
+
+android {
+    namespace "com.haasele.musicrr"
+    compileSdk 36
+    buildToolsVersion "36.0.0"
+    ndkVersion flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+
+    defaultConfig {
+        applicationId "com.haasele.musicrr"
+        minSdkVersion 24
+        targetSdkVersion 36
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.debug
+        }
+    }
+}
+
+flutter {
+    source '../..'
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+    
+    // ExoPlayer - core library supports FLAC, Opus, OGG natively
+    implementation 'com.google.android.exoplayer:exoplayer:2.19.1'
+    
+    // Metadata extraction
+    // Note: jaudiotagger may need to be added from a different repository or version
+    // Temporarily commented out - can be added later if needed for metadata extraction
+    // implementation 'org.jaudiotagger:jaudiotagger:2.0.3'
+    
+    // Web server
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
+    // WebSocket support (if available separately)
+    // Note: NanoWSD might be included in nanohttpd or need separate dependency
+}
