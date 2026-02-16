@@ -35,3 +35,6 @@ flutter run
 - Local-only recommendations
 - Customizable Now Playing screen
 - Remote control via embedded web server
+
+## Current State
+Core functionality for syncing Navidrome Music and having local storage is implemented. Still missing are performance Optimizations, Polishing in Design and Robust Errorhandling.
