@@ -2833,7 +2833,7 @@ useEffect(() => {
                     >
                       <button
                         type="button"
-                        className="flex min-w-0 flex-1 items-center gap-3 text-left hover:opacity-90"
+                        className="flex min-w-0 flex-1 items-center gap-3 self-stretch rounded-xl px-2 py-1 text-left transition hover:bg-white/[0.08]"
                         onClick={() => setOpenPlaylist({ id: playlist.id, name: playlist.name })}
                       >
                         <CoverArtSlot
@@ -3147,16 +3147,16 @@ useEffect(() => {
               </div>
             </section>
 
-            <section className="relative -translate-y-1 flex min-h-0 flex-col rounded-[24px] border border-white/15 bg-white/5 p-3 pb-[calc(0.55rem+env(safe-area-inset-bottom))] backdrop-blur-2xl min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
+            <section className="relative -translate-y-1 flex min-h-0 flex-col rounded-[24px] border border-white/15 bg-white/5 p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] backdrop-blur-2xl min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
               <div className="flex h-full min-h-0 flex-col gap-2.5 md:gap-3">
-              <div className="flex min-h-0 flex-1 flex-col justify-end space-y-1.5 min-[560px]:space-y-2">
+              <div className="flex min-h-0 flex-1 flex-col gap-1.5 min-[560px]:gap-2">
                 <div
                   role="slider"
                   aria-label="Song progress expanded"
                   aria-valuemin={0}
                   aria-valuemax={Math.floor(duration > 0 ? duration : (activeTrack?.duration_sec ?? 0))}
                   aria-valuenow={Math.floor(currentTime)}
-                  className="glass-progress relative h-[clamp(2.75rem,8vh,4.75rem)] w-full cursor-pointer select-none overflow-hidden rounded-2xl border border-white/15 bg-white/5 px-2 py-1 backdrop-blur-2xl sm:h-[clamp(3rem,7vh,4.75rem)]"
+                  className="glass-progress relative h-full min-h-[clamp(2.75rem,8vh,4.75rem)] flex-1 w-full cursor-pointer select-none overflow-hidden rounded-2xl border border-white/15 bg-white/5 px-2 py-1 backdrop-blur-2xl min-[560px]:h-[clamp(3rem,7vh,4.75rem)] min-[560px]:min-h-[clamp(3rem,7vh,4.75rem)] min-[560px]:flex-none"
                   onClick={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     const ratio = (e.clientX - rect.left) / rect.width;
@@ -3189,7 +3189,7 @@ useEffect(() => {
                 </div>
               </div>
 
-              <div className="relative flex flex-wrap items-center justify-center gap-1.5 min-[560px]:gap-2">
+              <div className="relative flex flex-wrap items-center justify-center gap-1.5 pb-1 min-[560px]:gap-2 min-[560px]:pb-0">
                 <button
                   type="button"
                   className={`fullscreen-inline-toggle ${
