@@ -36,6 +36,16 @@ Wichtige Variablen (siehe `.env.example`):
 - `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME`
 - `POSTGRES_URL` und `DRAGONFLY_URL` werden im Compose-API-Service gesetzt
 
+## Admin Login
+
+Der initiale Admin-User wird beim API-Start aus den ENV-Variablen erzeugt (siehe `apps/api/src/db.ts`).
+
+Standardwerte aus `.env.example`:
+
+- Email: `admin@musicrr.local`
+- Passwort: `admin123`
+- Name: `Musicrr Admin`
+
 ## Docker Compose (empfohlen)
 
 ```bash
