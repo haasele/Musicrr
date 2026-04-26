@@ -2582,10 +2582,10 @@ useEffect(() => {
               {sortedTracks.map((track, idx) => (
                 <div
                   key={track.id}
-                  className={`flex items-stretch gap-2 rounded-2xl border px-2 py-2 transition sm:gap-3 sm:px-3 ${
+                  className={`track-row flex items-stretch gap-2 rounded-2xl border px-2 py-2 transition sm:gap-3 sm:px-3 ${
                     selectedTrackIds.includes(track.id) && isEditMode
                       ? "border-[#d0bcff] bg-[#3a314b]"
-                      : "border-[#4a4458] bg-[#2b2930] hover:bg-[#36303e]"
+                      : "border-[#4a4458] bg-[#2b2930]"
                   }`}
                 >
                   {isEditMode ? (
@@ -2602,7 +2602,7 @@ useEffect(() => {
                   ) : null}
                   <button
                     type="button"
-                    className="flex min-h-12 min-w-0 flex-1 items-center justify-between gap-2 self-stretch text-left sm:min-h-10"
+                    className="no-accent-hover flex min-h-12 min-w-0 flex-1 items-center justify-between gap-2 self-stretch text-left sm:min-h-10"
                     onClick={() => {
                       if (isEditMode) {
                         toggleTrackSelection(track.id);
@@ -3147,7 +3147,7 @@ useEffect(() => {
               </div>
             </section>
 
-            <section className="relative -translate-y-1 flex min-h-0 flex-col rounded-[24px] border border-white/15 bg-white/5 p-3 pb-[calc(1.35rem+env(safe-area-inset-bottom))] backdrop-blur-2xl min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
+            <section className="relative -translate-y-1 mb-[calc(0.75rem+env(safe-area-inset-bottom))] flex min-h-0 flex-col rounded-[24px] border border-white/15 bg-white/5 p-3 pb-[calc(1.35rem+env(safe-area-inset-bottom))] backdrop-blur-2xl min-[560px]:mb-0 min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
               <div className="flex h-full min-h-0 flex-col gap-2.5 md:gap-3">
               <div className="flex min-h-0 flex-1 flex-col gap-1.5 min-[560px]:gap-2">
                 <div
@@ -3169,13 +3169,13 @@ useEffect(() => {
                       const barRatio = bar / (waveBars.length - 1);
                       const isPassed = barRatio <= progressRatio;
                       const staticShape = Math.sin((bar / waveBars.length) * Math.PI * 3.2);
-                      const baseHeight = 8 + Math.max(0, staticShape) * 10;
+                      const baseHeight = 16 + Math.max(0, staticShape) * 62;
                       return (
                         <span
                           key={`expanded-${bar}`}
                           className={`wave-bar ${isPlaying && isPassed ? "wave-animate" : ""} ${isPassed ? "wave-passed" : "wave-pending"}`}
                           style={{
-                            height: `${baseHeight}px`,
+                            height: `${baseHeight}%`,
                             animationDelay: `${bar * 26}ms`
                           }}
                         />

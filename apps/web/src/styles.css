@@ -204,7 +204,12 @@ button {
 }
 
 /* Home-wide interactive hover tint using dynamic track accents */
-.home-theme-panel button:hover:not(:disabled):not(.theme-tab-active) {
+.home-theme-panel button:hover:not(:disabled):not(.theme-tab-active):not(.no-accent-hover) {
+  background-color: color-mix(in srgb, var(--home-accent-a, #d0bcff) 24%, rgba(43, 41, 48, 0.92));
+  border-color: color-mix(in srgb, var(--home-accent-a, #d0bcff) 42%, rgba(103, 96, 122, 0.75));
+}
+
+.home-theme-panel .track-row:hover {
   background-color: color-mix(in srgb, var(--home-accent-a, #d0bcff) 24%, rgba(43, 41, 48, 0.92));
   border-color: color-mix(in srgb, var(--home-accent-a, #d0bcff) 42%, rgba(103, 96, 122, 0.75));
 }
