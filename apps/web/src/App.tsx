@@ -3123,8 +3123,8 @@ useEffect(() => {
             </IconBase>
           </button>
 
-          <div className="relative z-10 mx-auto grid h-full max-w-6xl gap-4 overflow-y-auto px-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-[72px] min-[560px]:grid-cols-[minmax(160px,240px)_1fr] min-[560px]:items-center min-[560px]:gap-4 min-[560px]:overflow-hidden min-[560px]:px-3 min-[560px]:pb-3 min-[560px]:pt-[80px] md:gap-5 md:px-4 md:pb-4 md:pt-[88px] lg:grid-cols-[minmax(220px,320px)_1fr] lg:gap-8 lg:p-8">
-            <section className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/15 bg-white/5 p-3 backdrop-blur-2xl min-[560px]:rounded-[24px] min-[560px]:p-3 md:rounded-[28px] md:p-3.5 lg:p-4">
+          <div className="relative z-10 mx-auto grid h-full max-w-6xl grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-y-auto px-3 pb-[calc(1.85rem+env(safe-area-inset-bottom))] pt-[72px] min-[560px]:grid-cols-[minmax(160px,240px)_1fr] min-[560px]:grid-rows-1 min-[560px]:items-center min-[560px]:gap-4 min-[560px]:overflow-hidden min-[560px]:px-3 min-[560px]:pb-3 min-[560px]:pt-[80px] md:gap-5 md:px-4 md:pb-4 md:pt-[88px] lg:grid-cols-[minmax(220px,320px)_1fr] lg:gap-8 lg:p-8">
+            <section className="self-start flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/15 bg-white/5 p-3 backdrop-blur-2xl min-[560px]:self-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:rounded-[28px] md:p-3.5 lg:p-4">
               {activeTrack ? (
                 <CoverArtSlot
                   className="mx-auto aspect-square w-full max-w-full max-h-[calc(100%-5.75rem)] rounded-[20px] border border-[#8f7ec555] shadow-2xl"
@@ -3147,7 +3147,7 @@ useEffect(() => {
               </div>
             </section>
 
-            <section className="relative -translate-y-1 flex min-h-0 flex-col rounded-[24px] border border-white/15 bg-white/5 p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] backdrop-blur-2xl min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
+            <section className="relative -translate-y-1 flex min-h-0 flex-col rounded-[24px] border border-white/15 bg-white/5 p-3 pb-[calc(1.35rem+env(safe-area-inset-bottom))] backdrop-blur-2xl min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
               <div className="flex h-full min-h-0 flex-col gap-2.5 md:gap-3">
               <div className="flex min-h-0 flex-1 flex-col gap-1.5 min-[560px]:gap-2">
                 <div
