@@ -10,7 +10,7 @@ export function AppShell(
 ) {
   return (
     <div className="min-h-screen bg-[radial-gradient(1200px_500px_at_5%_-10%,#4f378b33,transparent),radial-gradient(1000px_450px_at_95%_0%,#7d526033,transparent),#141218] text-[#f5eff7]">
-      <header className="sticky top-0 z-20 border-b border-[#49454f66] bg-[#211f26cc] px-4 py-4 backdrop-blur">
+      <header className="sticky top-0 z-50 border-b border-[#49454f66] bg-[#211f26cc] px-4 py-4 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             {props.headerLeft ? <div className="shrink-0">{props.headerLeft}</div> : null}

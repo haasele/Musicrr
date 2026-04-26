@@ -569,6 +569,7 @@ export function App() {
   const [newUserIsAdmin, setNewUserIsAdmin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
+  const [topToast, setTopToast] = useState<{ id: number; text: string } | null>(null);
   const [playbackDebug, setPlaybackDebug] = useState("");
   const [tracks, setTracks] = useState<Track[]>([]);
   const [tab, setTab] = useState<"tracks" | "artists" | "albums" | "playlists">("tracks");
@@ -592,6 +593,7 @@ export function App() {
   const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
   const [editingTrackTitle, setEditingTrackTitle] = useState("");
   const [openTrackMenuId, setOpenTrackMenuId] = useState<string | null>(null);
+  const [queueUiState, setQueueUiState] = useState(() => queue.getState());
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -656,7 +658,7 @@ export function App() {
         }
         const normalized = [{ ...data, source: "server" as const }];
         setTracks(normalized);
-        queue.load(normalized.map((t) => t.id));
+        setQueueUiState(queue.load(normalized.map((t) => t.id)));
         setCurrentTrackIndex(0);
         setIsPlayerExpanded(true);
         setTimeout(() => play(0), 120);
@@ -706,7 +708,7 @@ export function App() {
         const data = (await tr.json()) as Track[];
         const normalized = data.map((t) => ({ ...t, source: "server" as const }));
         setTracks(normalized);
-        queue.load(normalized.map((t) => t.id));
+        setQueueUiState(queue.load(normalized.map((t) => t.id)));
       } else {
         // CORS/Netz/API: keine Login-Maske spammen; API braucht CORS_ORIGINS = exakt diese Web-App-URL.
       }
@@ -840,6 +842,20 @@ export function App() {
   }, [importSession?.phase]);
 
   useEffect(() => {
+    const text = authMessage.trim();
+    if (!text) return;
+    setTopToast({ id: Date.now(), text });
+  }, [authMessage]);
+
+  useEffect(() => {
+    if (!topToast) return;
+    const t = window.setTimeout(() => {
+      setTopToast((current) => (current?.id === topToast.id ? null : current));
+    }, 4200);
+    return () => clearTimeout(t);
+  }, [topToast]);
+
+  useEffect(() => {
     const onResize = () => {
       if (canvasRef.current && milkEngineRef.current) milkEngineRef.current.resize(canvasRef.current);
     };
@@ -851,8 +867,14 @@ export function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!isPlayerExpanded || playerViewMode !== "visualizer") {
+useEffect(() => {
+    if (!isPlayerExpanded) {
+      // The fullscreen canvas unmounts on close; recreate engine on next open.
+      milkEngineRef.current?.dispose();
+      milkEngineRef.current = null;
+      return;
+    }
+    if (playerViewMode !== "visualizer") {
       milkEngineRef.current?.stop();
       return;
     }
@@ -971,6 +993,16 @@ export function App() {
     const by = u.size === 1 ? [...u][0]! : "Mehrere Künstler";
     return `${by} · Album · ${n} Titel`;
   }, [selectedAlbum, albumTracks]);
+
+  const homeThemeVars = useMemo(
+    () =>
+      ({
+        "--home-accent-a": accentA,
+        "--home-accent-b": accentB,
+        "--home-accent-c": accentC
+      }) as React.CSSProperties,
+    [accentA, accentB, accentC]
+  );
 
   const activeTrack = sortedTracks[currentTrackIndex];
   function openArtistPage(artistName: string): void {
@@ -1358,7 +1390,7 @@ export function App() {
     const data = (await res.json()) as Track[];
     const normalized = data.map((t) => ({ ...t, source: "server" as const }));
     setTracks(normalized);
-    queue.load(normalized.map((t) => t.id));
+    setQueueUiState(queue.load(normalized.map((t) => t.id)));
   }
 
   async function uploadAndPersistFiles(fileList: FileList | File[]) {
@@ -1725,6 +1757,14 @@ export function App() {
   function play(index: number) {
     const track = sortedTracks[index];
     if (audioRef.current && track) {
+      // Keep queue pointer aligned when user starts playback from any list row.
+      const qState = queue.getState();
+      const inQueueIndex = qState.trackIds.indexOf(track.id);
+      if (inQueueIndex >= 0) {
+        setQueueUiState(queue.load(qState.trackIds, inQueueIndex));
+      } else {
+        setQueueUiState(queue.load(sortedTracks.map((t) => t.id), index));
+      }
       currentTrackMetaRef.current = { id: track.id, title: track.title };
       streamBlobFallbackTriedRef.current.delete(track.id);
       const nextSrc = track.source === "local" && track.object_url
@@ -1781,13 +1821,31 @@ export function App() {
   }
 
   function next() {
-    const nextIndex = queue.next();
-    play(nextIndex);
+    const nextQueueIndex = queue.next();
+    setQueueUiState(queue.getState());
+    const nextTrackId = queue.getState().trackIds[nextQueueIndex];
+    if (!nextTrackId) return;
+    const nextIndex = sortedTracks.findIndex((t) => t.id === nextTrackId);
+    if (nextIndex >= 0) play(nextIndex);
   }
 
   function previous() {
-    const prevIndex = queue.previous();
-    play(prevIndex);
+    const prevQueueIndex = queue.previous();
+    setQueueUiState(queue.getState());
+    const prevTrackId = queue.getState().trackIds[prevQueueIndex];
+    if (!prevTrackId) return;
+    const prevIndex = sortedTracks.findIndex((t) => t.id === prevTrackId);
+    if (prevIndex >= 0) play(prevIndex);
+  }
+
+  function toggleShuffleMode() {
+    setQueueUiState(queue.toggleShuffle());
+  }
+
+  function cycleRepeatMode() {
+    const current = queue.getState().repeatMode;
+    const nextMode = current === "off" ? "all" : current === "all" ? "one" : "off";
+    setQueueUiState(queue.setRepeat(nextMode));
   }
 
   function pause() {
@@ -2080,6 +2138,21 @@ export function App() {
   if (!sessionId && !isAnonymousShareMode) {
     return (
       <AppShell title="Musicrr">
+        {topToast ? (
+          <div className="pointer-events-none fixed inset-x-0 top-[max(0.75rem,env(safe-area-inset-top,0px))] z-[220] flex justify-center px-3">
+            <div className="pointer-events-auto inline-flex max-w-[min(94vw,44rem)] items-center gap-2 rounded-2xl border border-white/15 bg-[#2c2738f2] px-3 py-2 text-sm text-[#f5eff7] shadow-2xl backdrop-blur-2xl">
+              <span className="min-w-0 flex-1 break-words">{topToast.text}</span>
+              <button
+                type="button"
+                className="rounded-full border border-white/15 px-2 py-0.5 text-xs text-[#e8def8] hover:bg-white/10"
+                onClick={() => setTopToast(null)}
+                aria-label="Hinweis schliessen"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="mx-auto mt-12 max-w-xl rounded-[28px] border border-[#4a445866] bg-[#211f26cc] p-8 shadow-2xl backdrop-blur">
           <p className="mb-2 text-xs uppercase tracking-[0.16em] text-[#ccc2dc]">Material 3 Expressive</p>
           <h1 className="text-3xl font-semibold text-[#f5eff7]">Login</h1>
@@ -2116,7 +2189,6 @@ export function App() {
             </div>
           </form>
           <div className="mt-4">{loading ? <NeonLoader /> : null}</div>
-          {authMessage ? <div className="mt-3 rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-sm text-[#e6e0e9]">{authMessage}</div> : null}
           {playbackDebug ? (
             <pre className="mt-2 max-h-44 overflow-auto rounded-xl border border-[#4a4458] bg-[#16131d] px-3 py-2 text-[11px] text-[#d9d1e5]">
               {playbackDebug}
@@ -2146,6 +2218,15 @@ export function App() {
     setTab("tracks");
   };
 
+  const libraryBackLabel =
+    openPlaylist != null
+      ? "Zur Playlists-Uebersicht"
+      : selectedArtist != null
+        ? "Alle Kuenstler"
+        : selectedAlbum != null
+          ? "Alle Alben"
+          : "Zur Titel-Liste";
+
   return (
     <AppShell
       title="Musicrr"
@@ -2153,9 +2234,9 @@ export function App() {
         libraryBackVisible ? (
           <button
             type="button"
-            className="panel-icon-btn -ml-0.5 h-9 min-w-9 px-0"
-            title={openPlaylist || selectedArtist || selectedAlbum ? "Eine Ebene zurueck" : "Zur Titel-Liste wechseln"}
-            aria-label="Zurueck"
+            className="panel-icon-btn -ml-0.5 h-10 min-w-10 px-0 sm:h-9 sm:min-w-9"
+            title={libraryBackLabel}
+            aria-label={libraryBackLabel}
             onClick={onLibraryBack}
           >
             <IconBase>
@@ -2177,8 +2258,39 @@ export function App() {
         ) : null
       }
     >
-      <div className="grid gap-4 pb-44 md:gap-5 md:pb-40">
-        <section className="rounded-[24px] border border-[#4a445866] bg-[#211f26cc] p-3 shadow-xl sm:rounded-[28px] sm:p-5">
+      {topToast ? (
+        <div className="pointer-events-none fixed inset-x-0 top-[max(0.75rem,env(safe-area-inset-top,0px))] z-[220] flex justify-center px-3">
+          <div className="pointer-events-auto inline-flex max-w-[min(94vw,44rem)] items-center gap-2 rounded-2xl border border-white/15 bg-[#2c2738f2] px-3 py-2 text-sm text-[#f5eff7] shadow-2xl backdrop-blur-2xl">
+            <span className="min-w-0 flex-1 break-words">{topToast.text}</span>
+            <button
+              type="button"
+              className="rounded-full border border-white/15 px-2 py-0.5 text-xs text-[#e8def8] hover:bg-white/10"
+              onClick={() => setTopToast(null)}
+              aria-label="Hinweis schliessen"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      ) : null}
+      <div
+        className="grid gap-4 pb-44 md:gap-5 md:pb-40"
+        style={
+          {
+            ...homeThemeVars,
+            background:
+              "radial-gradient(120% 140% at 8% -15%, color-mix(in srgb, var(--home-accent-a) 22%, transparent), transparent 58%), radial-gradient(130% 130% at 92% -10%, color-mix(in srgb, var(--home-accent-b) 20%, transparent), transparent 56%)"
+          } as React.CSSProperties
+        }
+      >
+        <section
+          className="rounded-[24px] border border-[#4a445866] p-3 shadow-xl sm:rounded-[28px] sm:p-5"
+          style={{
+            borderColor: "color-mix(in srgb, var(--home-accent-a) 18%, #4a445866)",
+            background:
+              "linear-gradient(160deg, color-mix(in srgb, var(--home-accent-a) 13%, #211f26cc) 0%, color-mix(in srgb, var(--home-accent-b) 11%, #211f26cc) 46%, color-mix(in srgb, var(--home-accent-c) 14%, #211f26cc) 100%)"
+          }}
+        >
           <div className="mb-4 flex flex-wrap justify-center gap-2">
             {tabs.map((value) => (
               <button
@@ -2192,6 +2304,25 @@ export function App() {
               </button>
             ))}
           </div>
+          {libraryBackVisible ? (
+            <div className="mb-4">
+              <button
+                type="button"
+                className="inline-flex w-full max-w-3xl items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.05] py-2.5 pl-3 pr-4 text-left text-sm font-medium text-[#e8def8] transition hover:bg-white/[0.1] sm:inline-flex sm:w-auto sm:justify-start"
+                title={libraryBackLabel}
+                aria-label={libraryBackLabel}
+                onClick={onLibraryBack}
+              >
+                <span className="shrink-0 text-[#cac4d0]">
+                  <IconBase>
+                    <path d="M19 12H5" />
+                    <path d="M12 19l-7-7 7-7" />
+                  </IconBase>
+                </span>
+                {libraryBackLabel}
+              </button>
+            </div>
+          ) : null}
           <div className="mb-4 grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:overflow-x-visible sm:pb-1">
             <input
               className="col-span-3 w-full min-w-0 flex-1 rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 py-2 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff] sm:min-w-[220px]"
@@ -2745,7 +2876,14 @@ export function App() {
         </section>
       </div>
 
-      <footer className="fixed inset-x-2 bottom-3 z-30 rounded-[20px] border border-white/15 bg-white/8 p-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl sm:inset-x-4 sm:bottom-5 sm:rounded-[24px] sm:p-3 md:inset-x-6">
+      <footer
+        className="fixed inset-x-2 bottom-3 z-30 rounded-[20px] border border-white/15 p-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl sm:inset-x-4 sm:bottom-5 sm:rounded-[24px] sm:p-3 md:inset-x-6"
+        style={{
+          borderColor: `color-mix(in srgb, ${accentA} 24%, rgba(255,255,255,0.16))`,
+          background:
+            `linear-gradient(155deg, color-mix(in srgb, ${accentA} 22%, rgba(255,255,255,0.08)) 0%, color-mix(in srgb, ${accentB} 16%, rgba(255,255,255,0.08)) 48%, color-mix(in srgb, ${accentC} 20%, rgba(255,255,255,0.08)) 100%)`
+        }}
+      >
         <div className="grid gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-center">
           <button
             type="button"
@@ -2869,7 +3007,7 @@ export function App() {
                 <path d="M15 12L6 6v12z" />
               </IconBase>
             </IconButton>
-            <IconButton title="Shuffle" onClick={() => queue.toggleShuffle()}>
+            <IconButton title="Shuffle" onClick={toggleShuffleMode}>
               <IconBase>
                 <path d="M3 7h3a4 4 0 0 1 3.2 1.6l5.6 6.8A4 4 0 0 0 18 17h3" />
                 <path d="M21 7h-3a4 4 0 0 0-3.2 1.6l-1 1.2" />
@@ -2879,7 +3017,6 @@ export function App() {
           </div>
         </div>
         <audio ref={audioRef} className="hidden" crossOrigin="anonymous" preload="auto" />
-        {authMessage ? <div className="mt-2 text-xs text-[#ffb4ab]">{authMessage}</div> : null}
         {playbackDebug ? (
           <pre className="mt-2 max-h-36 overflow-auto rounded-xl border border-[#4a445866] bg-[#17141f] px-3 py-2 text-[10px] text-[#d7cfe3]">
             {playbackDebug}
@@ -3015,6 +3152,21 @@ export function App() {
               </div>
 
               <div className="relative flex flex-wrap items-center justify-center gap-1.5 min-[560px]:gap-2">
+                <button
+                  type="button"
+                  className={`fullscreen-inline-toggle ${
+                    queueUiState.shuffle ? "fullscreen-inline-toggle-active fullscreen-inline-toggle-shuffle-on" : ""
+                  }`}
+                  title={queueUiState.shuffle ? "Shuffle an" : "Shuffle aus"}
+                  aria-label={queueUiState.shuffle ? "Shuffle an" : "Shuffle aus"}
+                  onClick={toggleShuffleMode}
+                >
+                  <IconBase>
+                    <path d="M3 7h3a4 4 0 0 1 3.2 1.6l5.6 6.8A4 4 0 0 0 18 17h3" />
+                    <path d="M21 7h-3a4 4 0 0 0-3.2 1.6l-1 1.2" />
+                    <path d="M3 17h3a4 4 0 0 0 3.2-1.6l1-1.2" />
+                  </IconBase>
+                </button>
                 <IconButton title="Previous" onClick={previous}>
                   <IconBase>
                     <path d="M6 6v12" />
@@ -3039,6 +3191,41 @@ export function App() {
                     <path d="M15 12L6 6v12z" />
                   </IconBase>
                 </IconButton>
+                <button
+                  type="button"
+                  className={`fullscreen-inline-toggle ${
+                    queueUiState.repeatMode !== "off" ? "fullscreen-inline-toggle-active" : ""
+                  } ${
+                    queueUiState.repeatMode === "all"
+                      ? "fullscreen-inline-toggle-repeat-all"
+                      : queueUiState.repeatMode === "one"
+                        ? "fullscreen-inline-toggle-repeat-one"
+                        : ""
+                  }`}
+                  title={
+                    queueUiState.repeatMode === "off"
+                      ? "Repeat aus"
+                      : queueUiState.repeatMode === "all"
+                        ? "Repeat alle Titel"
+                        : "Repeat einzelner Titel"
+                  }
+                  aria-label={
+                    queueUiState.repeatMode === "off"
+                      ? "Repeat aus"
+                      : queueUiState.repeatMode === "all"
+                        ? "Repeat alle Titel"
+                        : "Repeat einzelner Titel"
+                  }
+                  onClick={cycleRepeatMode}
+                >
+                  <IconBase>
+                    <path d="M17 1l4 4-4 4" />
+                    <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                    <path d="M7 23l-4-4 4-4" />
+                    <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+                  </IconBase>
+                  {queueUiState.repeatMode === "one" ? <span className="fullscreen-inline-toggle-badge">1</span> : null}
+                </button>
                 <button
                   ref={moreMenuTriggerRef}
                   className="player-btn px-3"
