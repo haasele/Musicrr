@@ -29,7 +29,16 @@ export async function initPersistence(): Promise<void> {
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT;`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;`;
-  await sql`ALTER TABLE users ALTER COLUMN seed DROP NOT NULL;`;
+  // Legacy: only if a "seed" column still exists (older schemas), allow NULL.
+  const hasSeedCol = await sql`
+    SELECT 1 as ok
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'seed'
+    LIMIT 1
+  `;
+  if (hasSeedCol[0]) {
+    await sql`ALTER TABLE users ALTER COLUMN seed DROP NOT NULL`;
+  }
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users (email) WHERE email IS NOT NULL;`;
 
   await sql`
