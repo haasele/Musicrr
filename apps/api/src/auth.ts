@@ -6,13 +6,26 @@ const loginRateState = new Map<string, { count: number; resetAt: number }>();
 const MAX_LOGIN_PER_WINDOW = 12;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
+/**
+ * CORS `Origin` is exact: scheme+host+port, no path. Browsers never send a trailing "/".
+ * Strip quotes (some env files keep them) and trailing slashes.
+ */
+export function normalizeCorsOriginEntry(entry: string): string {
+  let s = entry.trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+  s = s.replace(/\/+$/, "");
+  return s;
+}
+
 export function getCorsOriginsFromEnv(): Set<string> {
   const raw = process.env.CORS_ORIGINS?.trim() ?? "";
   if (raw) {
     return new Set(
       raw
         .split(",")
-        .map((s) => s.trim())
+        .map((s) => normalizeCorsOriginEntry(s))
         .filter(Boolean)
     );
   }

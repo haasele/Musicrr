@@ -9,6 +9,7 @@ import { importFolderRecursive } from "@music/importer";
 import { parseBuffer } from "music-metadata";
 import {
   buildCorsOriginOption,
+  normalizeCorsOriginEntry,
   readBearerSession,
   recordLoginFailure,
   requireSession,
@@ -89,12 +90,46 @@ if (corsMode === false) {
   );
 } else if (corsMode === true) {
   console.warn("[musicrr:api] CORS_ALLOW_ALL is on — not recommended for production.");
+} else if (Array.isArray(corsMode) && corsMode.length > 0) {
+  console.log("[musicrr:api] CORS allowlist:", corsMode.join(" | "));
 }
 
 const app = new Elysia()
   .use(
     cors({
-      origin: corsMode,
+      // Custom matcher: @elysiajs/cors string[] matching is easy to get wrong; we normalize
+      // (quotes, trailing slash) and compare to the request Origin.
+      origin: (request: Request): true | void => {
+        if (corsMode === true) {
+          return true;
+        }
+        if (corsMode === false) {
+          return;
+        }
+        if (!Array.isArray(corsMode) || !corsMode.length) {
+          return;
+        }
+        const header = request.headers.get("origin");
+        if (!header) {
+          return true;
+        }
+        const originNorm = normalizeCorsOriginEntry(header);
+        for (const allowed of corsMode) {
+          if (allowed === header || allowed === originNorm) {
+            return true;
+          }
+          if (normalizeCorsOriginEntry(allowed) === originNorm) {
+            return true;
+          }
+        }
+        if (process.env.DEBUG_CORS === "1" || process.env.DEBUG_CORS === "true") {
+          console.warn(
+            `[musicrr:api] CORS rejected Origin=${header} (normalized=${originNorm}) allowlist=`,
+            corsMode
+          );
+        }
+        return;
+      },
       methods: ["GET", "POST", "OPTIONS", "PUT", "DELETE"],
       allowedHeaders: ["Content-Type", "Authorization", "X-Session-Id", "Range"]
     })

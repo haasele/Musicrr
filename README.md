@@ -52,6 +52,8 @@ Für ein öffentliches Setup:
 
 **„API nicht erreichbar“ / CORS im Browser:** Wenn die Web-Seite `http://IP:3000` ist und die API `http://IP:3001`, trägst du in der API-Env z. B. `CORS_ORIGINS=http://IP:3000` ein, API neu starten. Wenn `NODE_ENV=production` und `CORS_ORIGINS` leer ist, blockt die API Cross-Origin-Requests. Nur zum Debuggen: `CORS_ALLOW_ALL=1` (unsicher, nicht dauerhaft).
 
+Häufige Stolperer: **kein** `/` am Ende einer Origin (nicht `https://foo/` – die API normalisiert das jetzt mit). `http://IP:3000` und `http://IP` (Port 80) sind unterschiedliche Origins. Die API-Subdomain (z. B. `api-…`) gehört in CORS in der Regel **nicht** rein, weil `Origin` die **Seite** ist, von der das JS läuft (z. B. `https://musicrr…`). Zum Gegenprüfen: in den API-Logs erscheint die erlaubte Liste beim Start. Mit `DEBUG_CORS=1` werden abgelehnte `Origin`-Header geloggt.
+
 ## Admin Login
 
 Der initiale Admin-User wird beim API-Start aus den ENV-Variablen erzeugt (siehe `apps/api/src/db.ts`).
