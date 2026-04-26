@@ -119,14 +119,19 @@ button {
 
 .home-theme-panel,
 .home-theme-footer {
-  position: relative;
   overflow: hidden;
   isolation: isolate;
 }
 
 .home-theme-panel {
+  position: relative;
+}
+
+.home-theme-panel {
   border-color: color-mix(in srgb, var(--home-accent-a, #d0bcff) 18%, #4a445866);
   background: #211f26cc;
+  border-radius: 24px;
+  background-clip: padding-box;
 }
 
 .home-theme-panel::before,
@@ -137,6 +142,12 @@ button {
   z-index: 0;
   pointer-events: none;
   border-radius: inherit;
+}
+
+@media (min-width: 640px) {
+  .home-theme-panel {
+    border-radius: 28px;
+  }
 }
 
 .home-theme-panel::before {
