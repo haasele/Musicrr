@@ -159,7 +159,37 @@ function CoverArtSlot({
   );
 }
 
-const IMPORT_UPLOAD_CHUNK = 20;
+/**
+ * Große Multipart-Requests scheitern oft hinter Reverse-Proxys (nginx client_max_body_size) oder Timeouts.
+ * Chunks nach Dateigröße + max. Dateien pro Request.
+ */
+const MAX_IMPORT_FILES_PER_REQUEST = 4;
+const MAX_IMPORT_BYTES_PER_REQUEST = 12 * 1024 * 1024;
+
+function chunkFilesForImport(files: File[]): File[][] {
+  const chunks: File[][] = [];
+  let i = 0;
+  while (i < files.length) {
+    const chunk: File[] = [];
+    let bytes = 0;
+    while (i < files.length) {
+      const f = files[i];
+      if (chunk.length > 0 && (chunk.length >= MAX_IMPORT_FILES_PER_REQUEST || bytes + f.size > MAX_IMPORT_BYTES_PER_REQUEST)) {
+        break;
+      }
+      if (chunk.length === 0 && f.size > MAX_IMPORT_BYTES_PER_REQUEST) {
+        chunk.push(f);
+        i += 1;
+        break;
+      }
+      chunk.push(f);
+      bytes += f.size;
+      i += 1;
+    }
+    if (chunk.length > 0) chunks.push(chunk);
+  }
+  return chunks;
+}
 
 function withRelativePathForUpload(f: File): File {
   const wk = f as File & { webkitRelativePath?: string };
@@ -857,32 +887,56 @@ export function App() {
     folderInputRef.current?.click();
   }
 
+  async function refreshLibraryFromServer() {
+    if (!userId || !sessionId) return;
+    const res = await apiFetch(`/library/tracks/${userId}?limit=500`, { sessionId });
+    if (!res.ok) return;
+    const data = (await res.json()) as Track[];
+    const normalized = data.map((t) => ({ ...t, source: "server" as const }));
+    setTracks(normalized);
+    queue.load(normalized.map((t) => t.id));
+  }
+
   async function uploadAndPersistFiles(fileList: FileList | File[]) {
     if (!userId || !sessionId) return;
     const files = (Array.isArray(fileList) ? fileList : Array.from(fileList)).map(withRelativePathForUpload);
     if (files.length === 0) return;
+    const chunks = chunkFilesForImport(files);
     let totalImported = 0;
     let totalFailed = 0;
-    for (let i = 0; i < files.length; i += IMPORT_UPLOAD_CHUNK) {
-      const chunk = files.slice(i, i + IMPORT_UPLOAD_CHUNK);
-      const end = Math.min(i + chunk.length, files.length);
-      setImportProgress(`uploading ${i + 1}–${end} / ${files.length}`);
-      const form = new FormData();
-      form.append("userId", userId);
-      for (const file of chunk) form.append("files", file);
-      const response = await apiFetch("/library/import-upload", { method: "POST", body: form, sessionId });
-      if (!response.ok) {
-        setImportProgress("upload failed");
-        return;
+    let aborted = false;
+    try {
+      for (let c = 0; c < chunks.length; c++) {
+        const chunk = chunks[c];
+        const doneSoFar = chunks.slice(0, c).reduce((s, ch) => s + ch.length, 0);
+        setImportProgress(`uploading batch ${c + 1}/${chunks.length} (${doneSoFar + 1}–${doneSoFar + chunk.length} / ${files.length})`);
+        const form = new FormData();
+        form.append("userId", userId);
+        for (const file of chunk) form.append("files", file);
+        const response = await apiFetch("/library/import-upload", { method: "POST", body: form, sessionId });
+        if (!response.ok) {
+          setImportProgress(`Import unterbrochen: HTTP ${response.status} (Proxy-Größe/CORS/Netz).`);
+          aborted = true;
+          break;
+        }
+        const result = (await response.json()) as { imported: number; failed?: number };
+        totalImported += result.imported;
+        totalFailed += result.failed ?? 0;
       }
-      const result = (await response.json()) as { imported: number; failed?: number };
-      totalImported += result.imported;
-      totalFailed += result.failed ?? 0;
+    } catch (e) {
+      console.error(e);
+      setImportProgress(
+        "Import fehlgeschlagen: Netzwerk, Timeout, CORS oder Request zu groß (Reverse-Proxy, siehe README)."
+      );
+      aborted = true;
+    } finally {
+      try {
+        await refreshLibraryFromServer();
+      } catch {
+        // CORS/offline: ignore
+      }
     }
-    const data = await apiFetch(`/library/tracks/${userId}?limit=500`, { sessionId }).then((res) => res.json());
-    const normalized = (data as Track[]).map((t) => ({ ...t, source: "server" as const }));
-    setTracks(normalized);
-    queue.load(normalized.map((t) => t.id));
+    if (aborted) return;
     if (totalFailed > 0) {
       setImportProgress(`${totalImported} importiert, ${totalFailed} übersprungen (Fehler)`);
     } else {
@@ -947,7 +1001,12 @@ export function App() {
       queue.load(nextTracks.map((t) => t.id));
       return nextTracks;
     });
-    await uploadAndPersistFiles(fileArr);
+    try {
+      await uploadAndPersistFiles(fileArr);
+    } catch (e) {
+      console.error(e);
+      setImportProgress("Server-Import fehlgeschlagen (Netz/CORS/Timeout).");
+    }
   }
 
   async function searchTracks(term: string) {

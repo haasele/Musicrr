@@ -70,6 +70,8 @@ Für ein öffentliches Setup:
 
 Häufige Stolperer: **kein** `/` am Ende einer Origin (nicht `https://foo/` – die API normalisiert das jetzt mit). `http://IP:3000` und `http://IP` (Port 80) sind unterschiedliche Origins. Die API-Subdomain (z. B. `api-…`) gehört in CORS in der Regel **nicht** rein, weil `Origin` die **Seite** ist, von der das JS läuft (z. B. `https://musicrr…`). Zum Gegenprüfen: in den API-Logs erscheint die erlaubte Liste beim Start. Mit `DEBUG_CORS=1` werden abgelehnte `Origin`-Header geloggt.
 
+**Bulk-Import scheitert, Einzelfile geht; Konsole: „CORS request did not succeed“ / `NetworkError`:** Häufig **kein** reines CORS, sondern **abgebrochene** große `POST`‑Requests: Reverse-Proxy (nginx, Traefik) begrenzt die Body-Größe (`client_max_body_size` bei nginx z. B. 1 MB). Dann beendet der Proxy die Verbindung – der Browser meldet fälschlich oft CORS/Network. **Lösung:** Proxy-Limit erhöhen (z. B. `64m`), **und** in der App werden Imports in **kleine Batches** (nach Anzahl + ~12 MiB) gesplittet. Trotzdem muss `CORS_ORIGINS` die Web-App-URL enthalten, sonst schlagen `fetch`‑Aufrufe an die API dauerhaft fehl.
+
 ## Admin Login
 
 Der initiale Admin-User wird beim API-Start aus den ENV-Variablen erzeugt (siehe `apps/api/src/db.ts`).
