@@ -39,6 +39,22 @@ Wichtige Variablen (siehe `.env.example`):
 - Optionales `VITE_API_ORIGIN` – feste API-Origin für die Web-App (wenn leer: gleicher Host wie die Seite, Port 3001)
 - `POSTGRES_URL` und `DRAGONFLY_URL` werden im Compose-API-Service gesetzt
 
+### Docker: Daten behalten (wichtig)
+
+Die Datenbank und Uploads hängen an **Host-Ordnern** unter **`.data/`** (siehe `docker-compose.yml`):
+
+- **Postgres:** `./.data/postgres` → komplette DB (User, Sessions in Redis sind separat unter `.data/dragonfly` und Uploads unter `.data/uploads`).
+
+Wenn die Bibliothek nach jedem `docker compose up --build` **wieder leer** ist, liegt das fast immer daran, dass:
+
+- der **Projektordner** jedes Mal neu ist (z. B. frischer CI-Clone ohne `.data`),
+
+- jemand **`.data` gelöscht** hat, oder
+
+- **kein** persistiertes Verzeichnis gemountet wird (API/Web nur per `docker run` **ohne** die Compose-Volumes).
+
+`docker build` ersetzt nur Images; **Bind-Mounts** bleiben, solange der Host-Ordner bleibt. Backups: `.data/postgres` (und ggf. `.data/uploads`, `.data/dragonfly`) sichern oder ein benanntes Docker-Volume mit festem Host-Pfad nutzen.
+
 ## Security & Internet-Deployment
 
 Die API erwartet für geschützte Routen eine Session (`Authorization: Bearer <sessionId>` oder für Medien optional `?session=` / Share-`?share=`). Öffentlich bleiben u. a. `GET /health`, `POST /auth/login`, `GET /auth/session/:id`, `GET /share/:token` und die Visualizer-Preset-Reads.

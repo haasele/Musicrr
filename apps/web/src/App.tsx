@@ -159,6 +159,17 @@ function CoverArtSlot({
   );
 }
 
+const IMPORT_UPLOAD_CHUNK = 20;
+
+function withRelativePathForUpload(f: File): File {
+  const wk = f as File & { webkitRelativePath?: string };
+  const p = wk.webkitRelativePath?.trim();
+  if (p) {
+    return new File([f], p.replace(/\\/g, "/"), { type: f.type || "application/octet-stream", lastModified: f.lastModified });
+  }
+  return f;
+}
+
 function newRandomId(): string {
   const c: Crypto | undefined = globalThis.crypto;
   if (c && typeof c.randomUUID === "function") {
@@ -848,23 +859,35 @@ export function App() {
 
   async function uploadAndPersistFiles(fileList: FileList | File[]) {
     if (!userId || !sessionId) return;
-    const files = Array.isArray(fileList) ? fileList : Array.from(fileList);
+    const files = (Array.isArray(fileList) ? fileList : Array.from(fileList)).map(withRelativePathForUpload);
     if (files.length === 0) return;
-    setImportProgress("uploading");
-    const form = new FormData();
-    form.append("userId", userId);
-    for (const file of files) form.append("files", file);
-    const response = await apiFetch("/library/import-upload", { method: "POST", body: form, sessionId });
-    if (!response.ok) {
-      setImportProgress("upload failed");
-      return;
+    let totalImported = 0;
+    let totalFailed = 0;
+    for (let i = 0; i < files.length; i += IMPORT_UPLOAD_CHUNK) {
+      const chunk = files.slice(i, i + IMPORT_UPLOAD_CHUNK);
+      const end = Math.min(i + chunk.length, files.length);
+      setImportProgress(`uploading ${i + 1}–${end} / ${files.length}`);
+      const form = new FormData();
+      form.append("userId", userId);
+      for (const file of chunk) form.append("files", file);
+      const response = await apiFetch("/library/import-upload", { method: "POST", body: form, sessionId });
+      if (!response.ok) {
+        setImportProgress("upload failed");
+        return;
+      }
+      const result = (await response.json()) as { imported: number; failed?: number };
+      totalImported += result.imported;
+      totalFailed += result.failed ?? 0;
     }
-    const result = await response.json() as { imported: number };
     const data = await apiFetch(`/library/tracks/${userId}?limit=500`, { sessionId }).then((res) => res.json());
     const normalized = (data as Track[]).map((t) => ({ ...t, source: "server" as const }));
     setTracks(normalized);
     queue.load(normalized.map((t) => t.id));
-    setImportProgress(`${result.imported} Dateien importiert`);
+    if (totalFailed > 0) {
+      setImportProgress(`${totalImported} importiert, ${totalFailed} übersprungen (Fehler)`);
+    } else {
+      setImportProgress(`${totalImported} Dateien importiert`);
+    }
   }
 
   async function pickDirectoryWithFsApi() {
@@ -875,17 +898,22 @@ export function App() {
       const picker = (window as unknown as { showDirectoryPicker: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
       const handle = await picker();
       const collected: File[] = [];
-      const walk = async (dir: FileSystemDirectoryHandle) => {
+      const walk = async (dir: FileSystemDirectoryHandle, prefix: string) => {
         for await (const entry of (dir as DirWithValues).values()) {
           if (entry.kind === "directory") {
-            await walk(entry);
+            await walk(entry, `${prefix}${entry.name}/`);
           } else if (entry.kind === "file") {
             const file = await entry.getFile();
-            if (isLikelyAudioFile(file)) collected.push(file);
+            if (isLikelyAudioFile(file)) {
+              const rel = `${prefix}${file.name}`.replace(/^\//, "");
+              collected.push(
+                new File([file], rel, { type: file.type || "application/octet-stream", lastModified: file.lastModified })
+              );
+            }
           }
         }
       };
-      await walk(handle);
+      await walk(handle, "");
       if (collected.length === 0) {
         setImportProgress("keine Audiodateien im Ordner");
         return;
@@ -898,10 +926,11 @@ export function App() {
 
   async function importLocalFiles(files: FileList | File[] | null) {
     if (!files || files.length === 0) return;
-    const fileArr = Array.isArray(files) ? files : Array.from(files);
+    const fileArr = (Array.isArray(files) ? files : Array.from(files)).map(withRelativePathForUpload);
     const imported: Track[] = [];
     fileArr.forEach((file, idx) => {
-      const name = file.name.replace(/\.[^/.]+$/, "");
+      const base = file.name.split(/[/\\]/).pop() ?? file.name;
+      const name = base.replace(/\.[^/.]+$/, "");
       imported.push({
         id: `local-${Date.now()}-${idx}-${newRandomId()}`,
         title: importTitle.trim() ? `${importTitle.trim()} - ${name}` : name,

@@ -22,6 +22,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-musicrr}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
+    # Wichtig: DB bleibt nur erhalten, wenn dieses Verzeichnis auf dem Host **nicht** gelöscht wird.
+    # Deploy: denselben Projektordner wiederverwenden oder dieses Volume sichern. `docker compose down` ohne -v
+    # löscht **keine** Bind-Mounts; `rm -rf .data` leert die DB.
     volumes:
       - ./.data/postgres:/var/lib/postgresql/data
     healthcheck:
@@ -71,5 +74,6 @@ services:
       ADMIN_NAME: ${ADMIN_NAME:-Musicrr Admin}
     ports:
       - "3001:3001"
+    # Medien-Uploads: gleiches Prinzip wie postgres — .data auf dem Host erhalten
     volumes:
       - ./.data/uploads:/app/apps/api/uploads

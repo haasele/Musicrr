@@ -534,39 +534,50 @@ const app = new Elysia()
 
     const files = form.getAll("files").filter((entry): entry is File => entry instanceof File);
     let imported = 0;
+    let failed = 0;
     for (const file of files) {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const hash = createHash("sha256").update(bytes).digest("hex");
-      const ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : ".bin";
-      const storedPath = join(uploadDir, `${hash}${ext}`);
-      await writeFile(storedPath, bytes);
+      try {
+        const rel = String(file.name).replace(/\\/g, "/").trim();
+        const baseName = rel.split("/").filter(Boolean).pop() ?? "track";
+        const ext = baseName.includes(".") ? baseName.slice(baseName.lastIndexOf(".")) : ".bin";
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const hash = createHash("sha256").update(bytes).digest("hex");
+        const storedPath = join(uploadDir, `${hash}${ext}`);
+        await writeFile(storedPath, bytes);
 
-      const extForParser = extensionForParse(String(file.name), file.type);
-      const titleFallback = file.name.replace(/\.[^/.]+$/, "");
-      const metadata = await parseAudioMetadataForImport(storedPath, bytes, { name: file.name, type: file.type }, extForParser, titleFallback);
-      let coverPath: string | null = null;
-      const coverPic = selectCover(metadata.common.picture);
-      if (coverPic?.data && coverPic.data.length > 0) {
-        const coverExt = coverExtForMimeFormat(String(coverPic.format ?? ""));
-        coverPath = join(coverDir, `${hash}${coverExt}`);
-        const raw = coverPic.data;
-        await writeFile(coverPath, raw instanceof Buffer ? raw : new Uint8Array(raw));
-      }
+        const extForParser = extensionForParse(baseName, file.type);
+        const titleFallback = baseName.replace(/\.[^/.]+$/, "");
+        const metadata = await parseAudioMetadataForImport(
+          storedPath,
+          bytes,
+          { name: rel, type: file.type },
+          extForParser,
+          titleFallback
+        );
+        let coverPath: string | null = null;
+        const coverPic = selectCover(metadata.common.picture);
+        if (coverPic?.data && coverPic.data.length > 0) {
+          const coverExt = coverExtForMimeFormat(String(coverPic.format ?? ""));
+          coverPath = join(coverDir, `${hash}${coverExt}`);
+          const raw = coverPic.data;
+          await writeFile(coverPath, raw instanceof Buffer ? raw : new Uint8Array(raw));
+        }
 
-      const lyricsText = Array.isArray(metadata.common.lyrics) && metadata.common.lyrics.length > 0
-        ? metadata.common.lyrics.join("\n\n")
-        : null;
+        const lyricsText = Array.isArray(metadata.common.lyrics) && metadata.common.lyrics.length > 0
+          ? metadata.common.lyrics.join("\n\n")
+          : null;
 
-      const id = crypto.randomUUID();
-      const trackTitle = metadata.common.title ?? file.name.replace(/\.[^/.]+$/, "");
-      const metadataPayload = {
-        fileName: file.name,
-        mimeType: file.type,
-        size: bytes.length,
-        albumArtist: metadata.common.albumartist ?? null,
-        year: metadata.common.year ?? null
-      };
-      const inserted = await sql`
+        const id = crypto.randomUUID();
+        const trackTitle = metadata.common.title ?? titleFallback;
+        const metadataPayload = {
+          fileName: rel,
+          baseName,
+          mimeType: file.type,
+          size: bytes.length,
+          albumArtist: metadata.common.albumartist ?? null,
+          year: metadata.common.year ?? null
+        };
+        const inserted = await sql`
         INSERT INTO tracks (id, user_id, artist, album, title, file_path, cover_path, lyrics, hash, duration_sec, added_at, metadata_json)
         VALUES (${id}, ${userId}, ${metadata.common.artist ?? "Unknown Artist"}, ${metadata.common.album ?? null},
           ${trackTitle}, ${storedPath}, ${coverPath}, ${lyricsText}, ${hash},
@@ -583,13 +594,17 @@ const app = new Elysia()
         WHERE tracks.user_id = ${userId}
         RETURNING id
       `;
-      if (inserted[0]) {
-        imported += 1;
-        await upsertTrackSearchDoc(String(inserted[0].id));
+        if (inserted[0]) {
+          imported += 1;
+          await upsertTrackSearchDoc(String(inserted[0].id));
+        }
+      } catch (err) {
+        failed += 1;
+        console.error("[music:import-upload] file failed", file.name, err);
       }
     }
 
-    return { imported };
+    return { imported, failed };
   })
   .post(
     "/playlist/create",
