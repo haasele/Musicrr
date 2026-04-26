@@ -602,7 +602,6 @@ export function App() {
   const [visualPresets, setVisualPresets] = useState<string[]>([]);
   const [preset, setPreset] = useState<string>("");
   const [query, setQuery] = useState("");
-  const [importTitle, setImportTitle] = useState("");
   const [importSession, setImportSession] = useState<ImportSession>(null);
   const [selectedTrackIds, setSelectedTrackIds] = useState<string[]>([]);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -1656,40 +1655,57 @@ useEffect(() => {
       setAuthMessage("Bitte einen Playlist-Namen eingeben.");
       return;
     }
-    const response = await apiFetch("/playlist/create", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, name, trackIds: selectedTrackIds }),
-      sessionId
-    });
-    if (!response.ok) {
-      setAuthMessage(`Playlist konnte nicht erstellt werden (HTTP ${response.status}).`);
-      return;
+    try {
+      const response = await apiFetch("/playlist/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, name, trackIds: selectedTrackIds }),
+        sessionId
+      });
+      if (!response.ok) {
+        setAuthMessage(`Playlist konnte nicht erstellt werden (HTTP ${response.status}).`);
+        return;
+      }
+      const created = (await response.json()) as { id?: string; name?: string };
+      if (created?.id && created?.name) {
+        setPlaylists((prev) => [{ id: created.id as string, name: created.name as string }, ...prev.filter((p) => p.id !== created.id)]);
+      }
+      setPlaylistName("");
+      setSelectedTrackIds([]);
+      setAuthMessage(
+        selectedTrackIds.length > 0
+          ? `Playlist „${name}“ mit ${selectedTrackIds.length} Titel(n) erstellt.`
+          : `Leere Playlist „${name}“ erstellt — Titel unter „Titel“ hinzufügen oder hier öffnen und Einträge ergänzen.`
+      );
+    } catch {
+      setAuthMessage("Playlist konnte nicht erstellt werden (Netzwerk/CORS).");
     }
-    setPlaylistName("");
-    setSelectedTrackIds([]);
-    const data = await apiFetch(`/users/${userId}/playlists`, { sessionId }).then((res) => res.json());
-    setPlaylists(data);
-    setAuthMessage(
-      selectedTrackIds.length > 0
-        ? `Playlist „${name}“ mit ${selectedTrackIds.length} Titel(n) erstellt.`
-        : `Leere Playlist „${name}“ erstellt — Titel unter „Titel“ hinzufügen oder hier öffnen und Einträge ergänzen.`
-    );
   }
 
   async function createPlaylistWithTrack(track: Track) {
     if (!userId || !sessionId) return;
     const name = window.prompt("Playlist Name");
     if (!name?.trim()) return;
-    await apiFetch("/playlist/create", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, name: name.trim(), trackIds: [track.id] }),
-      sessionId
-    });
-    const data = await apiFetch(`/users/${userId}/playlists`, { sessionId }).then((res) => res.json());
-    setPlaylists(data);
-    setOpenTrackMenuId(null);
+    try {
+      const response = await apiFetch("/playlist/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, name: name.trim(), trackIds: [track.id] }),
+        sessionId
+      });
+      if (!response.ok) {
+        setAuthMessage(`Playlist konnte nicht erstellt werden (HTTP ${response.status}).`);
+        return;
+      }
+      const created = (await response.json()) as { id?: string; name?: string };
+      if (created?.id && created?.name) {
+        setPlaylists((prev) => [{ id: created.id as string, name: created.name as string }, ...prev.filter((p) => p.id !== created.id)]);
+      }
+      setOpenTrackMenuId(null);
+      setAuthMessage(`Playlist „${name.trim()}“ erstellt.`);
+    } catch {
+      setAuthMessage("Playlist konnte nicht erstellt werden (Netzwerk/CORS).");
+    }
   }
 
   async function addTrackToPlaylist(track: Track) {
@@ -2327,8 +2343,8 @@ useEffect(() => {
             {tabs.map((value) => (
               <button
                 key={value}
-                className={`rounded-full px-4 py-2 text-sm font-medium capitalize transition ${
-                  tab === value ? "bg-[#eaddff] text-[#21005d]" : "border border-[#4a4458] bg-[#2b2930] text-[#e6e0e9]"
+                className={`theme-tab rounded-full px-4 py-2 text-sm font-medium capitalize transition ${
+                  tab === value ? "theme-tab-active" : ""
                 }`}
                 onClick={() => setTab(value)}
               >
@@ -2361,12 +2377,6 @@ useEffect(() => {
               value={query}
               onChange={(e) => searchTracks(e.target.value)}
               placeholder="Suche nach Track, Artist, Album"
-            />
-            <input
-              className="col-span-3 w-full min-w-0 rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 py-2 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff] sm:min-w-[180px] sm:w-auto"
-              value={importTitle}
-              onChange={(e) => setImportTitle(e.target.value)}
-              placeholder="Import Titel (optional)"
             />
 
             <div className="relative justify-self-center sm:justify-self-auto">
@@ -2908,7 +2918,10 @@ useEffect(() => {
         </section>
       </div>
 
-      <footer className="home-theme-footer fixed inset-x-2 bottom-3 z-30 rounded-[20px] border border-white/15 p-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl sm:inset-x-4 sm:bottom-5 sm:rounded-[24px] sm:p-3 md:inset-x-6">
+      <footer
+        className="home-theme-footer fixed inset-x-2 bottom-3 z-30 rounded-[20px] border border-white/15 p-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl sm:inset-x-4 sm:bottom-5 sm:rounded-[24px] sm:p-3 md:inset-x-6"
+        style={homeThemeVars}
+      >
         <div className="grid gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-center">
           <button
             type="button"
@@ -3120,7 +3133,7 @@ useEffect(() => {
                   label={activeTrack.title}
                 />
               ) : null}
-              <div className="mt-3 flex min-h-[4.75rem] min-w-0 flex-1 flex-col justify-center overflow-hidden px-1">
+              <div className="mt-3 flex h-[4.75rem] min-w-0 flex-col justify-center overflow-hidden px-1">
                 <div className="truncate text-center text-xl font-semibold text-[#f5eff7]">{activeTrack?.title ?? "Nichts abgespielt"}</div>
                 <button
                   className="mx-auto mt-0.5 block max-w-full truncate px-1 text-center text-sm text-[#d1c9dc] underline-offset-2 hover:underline"
@@ -3134,9 +3147,9 @@ useEffect(() => {
               </div>
             </section>
 
-            <section className="relative -translate-y-1 flex min-h-0 flex-col rounded-[24px] border border-white/15 bg-white/5 p-3 backdrop-blur-2xl min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
+            <section className="relative -translate-y-1 flex min-h-0 flex-col rounded-[24px] border border-white/15 bg-white/5 p-3 pb-[calc(0.55rem+env(safe-area-inset-bottom))] backdrop-blur-2xl min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
               <div className="flex h-full min-h-0 flex-col gap-2.5 md:gap-3">
-              <div className="space-y-1.5 min-[560px]:space-y-2">
+              <div className="flex min-h-0 flex-1 flex-col justify-end space-y-1.5 min-[560px]:space-y-2">
                 <div
                   role="slider"
                   aria-label="Song progress expanded"
@@ -3273,7 +3286,7 @@ useEffect(() => {
             ? createPortal(
                 <div
                   ref={moreMenuRef}
-                  className="fullscreen-more-menu fixed z-[100] w-fit min-w-[142px] overflow-hidden rounded-2xl p-2"
+                  className="fullscreen-more-menu fixed z-[210] w-fit min-w-[142px] overflow-hidden rounded-2xl p-2"
                   style={
                     {
                       top: fullscreenMoreMenuPos.top,

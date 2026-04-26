@@ -22,7 +22,9 @@ export function AppShell(
           </div>
         </header>
       ) : null}
-      <main className="mx-auto max-w-7xl p-4 md:p-6">{props.children}</main>
+      <main className="px-4 py-4 md:px-6 md:py-6">
+        <div className="mx-auto w-full max-w-7xl">{props.children}</div>
+      </main>
     </div>
   );
 }
