@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AppShell, NeonLoader } from "@music/ui";
 import { PlayerQueue } from "@music/core";
 import { apiFetch, apiUrl, getApiWsBase, mediaUrl } from "./apiConfig";
@@ -132,7 +133,45 @@ function isBrowserInSecureContext(): boolean {
   return location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
 }
 
-/** randomUUID is missing in some browsers or without a secure context; never throw from import flow. */
+/**
+ * Clipboard API is only exposed in secure contexts; on http:// (e.g. LAN) `navigator.clipboard` is undefined.
+ * Falls back to execCommand, then the caller may use prompt. Async APIs may run after a fetch; execCommand
+ * can still work from the same event turn in some browsers — if not, prompt is the last resort.
+ */
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      /* use fallbacks */
+    }
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.left = "0";
+    ta.style.top = "0";
+    ta.style.width = "1px";
+    ta.style.height = "1px";
+    ta.style.padding = "0";
+    ta.style.border = "none";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    if (ok) return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
 function CoverArtSlot({
   className,
   hasCover,
@@ -155,6 +194,177 @@ function CoverArtSlot({
           {initial}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** Oben: großes Artwork, Titel, Untertitel (Apple-Music-ähnlich). */
+function LibraryDetailHero({
+  title,
+  subtitle,
+  children
+}: {
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mb-6 flex w-full flex-col items-center gap-4 sm:mb-8 sm:flex-row sm:items-end sm:gap-8">
+      <div className="shrink-0 [filter:drop-shadow(0_20px_40px_rgba(0,0,0,0.45))]">{children}</div>
+      <div className="w-full min-w-0 text-center sm:flex-1 sm:pb-1 sm:text-left">
+        <h2 className="text-pretty text-2xl font-bold leading-[1.15] tracking-tight text-[#f5eff7] sm:text-3xl md:text-4xl">{title}</h2>
+        <p className="mt-1.5 text-pretty text-sm leading-relaxed text-[#b7afc2] sm:mt-2 sm:text-base">{subtitle}</p>
+      </div>
+    </div>
+  );
+}
+
+/** 1–4 Thumbnails (wie Listen-Cover) zu einem großen Mosaik; gleiche Titel wie in der Parent-Liste, nur vergrößert. */
+function PlaylistCollageArt({ tracks, murl }: { tracks: Track[]; murl: (path: string) => string }) {
+  const size = "h-[min(58vw,280px)] w-[min(58vw,280px)] sm:h-64 sm:w-64";
+  if (tracks.length === 0) {
+    return (
+      <div
+        className={`${size} flex items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-[#4f378b]/80 via-[#2a2435] to-[#14111a] shadow-2xl`}
+        aria-hidden
+      >
+        <svg viewBox="0 0 24 24" className="h-20 w-20 text-white/25" fill="currentColor">
+          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+        </svg>
+      </div>
+    );
+  }
+  const withCover = tracks.filter((t) => t.cover_path);
+  const source = (withCover.length > 0 ? withCover : tracks).slice(0, 4);
+
+  if (source.length === 1) {
+    return (
+      <CoverArtSlot
+        className={`${size} rounded-2xl border border-white/10 shadow-2xl`}
+        hasCover={Boolean(source[0].cover_path)}
+        coverUrl={murl(`/media/track/${source[0].id}/cover`)}
+        label={source[0].title}
+      />
+    );
+  }
+  if (source.length === 2) {
+    return (
+      <div className={`${size} grid grid-cols-2 gap-0.5 overflow-hidden rounded-2xl border border-white/10 shadow-2xl`}>
+        {source.map((t) => (
+          <div key={t.id} className="relative min-h-0 min-w-0">
+            {t.cover_path ? (
+              <img src={murl(`/media/track/${t.id}/cover`)} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center bg-[#2a2435] text-lg font-bold text-[#9a92a4]">
+                {t.title.trim().charAt(0).toUpperCase() || "♪"}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  const cells: (Track | null)[] = source.slice(0, 4);
+  while (cells.length < 4) cells.push(null);
+  return (
+    <div className={`${size} grid grid-cols-2 grid-rows-2 gap-0.5 overflow-hidden rounded-2xl border border-white/10 shadow-2xl`}>
+      {cells.map((t, i) =>
+        t ? (
+          <div key={t.id} className="relative min-h-0 min-w-0">
+            {t.cover_path ? (
+              <img src={murl(`/media/track/${t.id}/cover`)} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center bg-[#1f1b2a] text-sm font-bold text-[#7d7688]">
+                {t.title.trim().charAt(0).toUpperCase() || "♪"}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div key={`pad-${i}`} className="min-h-0 bg-[#141119]" />
+        )
+      )}
+    </div>
+  );
+}
+
+/** Kompaktes 48px-Mosaik für die Playlists-Übersicht (gleiche Logik wie im Detail, nur verkleinert). */
+function PlaylistListThumb({ tracks, murl }: { tracks: Track[]; murl: (path: string) => string }) {
+  if (tracks.length === 0) {
+    return (
+      <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-gradient-to-br from-[#4f378b]/60 to-[#1a1620]">
+        <div className="flex h-full w-full items-center justify-center" aria-hidden>
+          <svg viewBox="0 0 24 24" className="h-5 w-5 text-white/35" fill="currentColor">
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+          </svg>
+        </div>
+      </div>
+    );
+  }
+  const withC = tracks.filter((t) => t.cover_path);
+  const source = (withC.length > 0 ? withC : tracks).slice(0, 4);
+  if (source.length === 1) {
+    return (
+      <CoverArtSlot
+        className="h-12 w-12 shrink-0 rounded-lg border border-white/10"
+        hasCover={Boolean(source[0].cover_path)}
+        coverUrl={murl(`/media/track/${source[0].id}/cover`)}
+        label={source[0].title}
+      />
+    );
+  }
+  const cells: (Track | null)[] = source.slice(0, 4);
+  while (cells.length < 4) cells.push(null);
+  return (
+    <div className="grid h-12 w-12 shrink-0 grid-cols-2 grid-rows-2 gap-px overflow-hidden rounded-lg border border-white/10 bg-[#141119]">
+      {cells.map((t, i) =>
+        t ? (
+          <div key={t.id} className="relative min-h-0 min-w-0">
+            {t.cover_path ? (
+              <img src={murl(`/media/track/${t.id}/cover`)} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center bg-[#25202e] text-[8px] font-bold text-[#7d7688]">
+                {t.title.trim().charAt(0).toUpperCase() || "♪"}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div key={`e-${i}`} className="min-h-0 bg-[#141119]" />
+        )
+      )}
+    </div>
+  );
+}
+
+/** Eine zusammenhängende Titel-Liste (ohne pro Zeile Karten/„Blasen“), nur Trennlinien + Hover. */
+function DetailTrackListView({
+  tracks,
+  onRowClick,
+  formatDuration
+}: {
+  tracks: Track[];
+  onRowClick: (track: Track, listIndex: number) => void;
+  formatDuration: (sec: number) => string;
+}) {
+  if (tracks.length === 0) return null;
+  return (
+    <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-white/10 bg-[#14131a]/90 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]">
+      <ol className="m-0 list-none divide-y divide-white/[0.07] p-0">
+        {tracks.map((track, idx) => (
+          <li key={track.id} className="m-0 p-0">
+            <button
+              type="button"
+              className="flex w-full min-h-11 items-center gap-3 px-3 py-2.5 pl-2 text-left transition hover:bg-white/[0.04] active:bg-white/[0.07] sm:px-4"
+              onClick={() => onRowClick(track, idx)}
+            >
+              <span className="w-6 shrink-0 text-center text-[0.8rem] font-medium tabular-nums text-[#4f4a5a] sm:w-7">{idx + 1}</span>
+              <span className="min-w-0 flex-1 truncate pr-2 text-[0.94rem] leading-snug text-[#e8e0f0]">{track.title}</span>
+              <span className="w-[3.25rem] shrink-0 text-right text-[0.8rem] tabular-nums text-[#6a6378] sm:text-xs">
+                {formatDuration(track.duration_sec)}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
@@ -200,21 +410,145 @@ function withRelativePathForUpload(f: File): File {
   return f;
 }
 
-function newRandomId(): string {
-  const c: Crypto | undefined = globalThis.crypto;
-  if (c && typeof c.randomUUID === "function") {
-    try {
-      return c.randomUUID();
-    } catch {
-      // fall through
-    }
-  }
-  if (c && typeof c.getRandomValues === "function") {
-    const bytes = new Uint8Array(16);
-    c.getRandomValues(bytes);
-    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-  }
-  return `id-${Date.now()}-${Math.random().toString(36).slice(2, 12)}${Math.random().toString(36).slice(2, 12)}`;
+type ImportSession =
+  | null
+  | {
+      phase: "upload" | "sync" | "done" | "error";
+      totalFiles: number;
+      doneFiles: number;
+      totalBytes: number;
+      doneBytes: number;
+      batchIndex: number;
+      batchCount: number;
+      line2?: string;
+      summary?: string;
+      errorMessage?: string;
+    };
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function ImportUploadFullscreen({
+  session,
+  onClose
+}: {
+  session: Exclude<ImportSession, null>;
+  onClose: () => void;
+}) {
+  const pct =
+    session.totalBytes > 0
+      ? Math.min(100, (session.doneBytes / session.totalBytes) * 100)
+      : session.totalFiles > 0
+        ? Math.min(100, (session.doneFiles / session.totalFiles) * 100)
+        : 0;
+  return (
+    <div
+      className="import-overlay-backdrop fixed inset-0 z-[200] flex min-h-[100dvh] items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] sm:p-5"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="import-overlay-title"
+      aria-describedby="import-overlay-desc"
+      aria-live="polite"
+    >
+      <div className="w-full min-[400px]:max-w-md min-[480px]:max-w-lg">
+        <div
+          className="import-overlay-card pointer-events-auto relative max-h-[min(90dvh,36rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-[24px] border border-white/12 bg-[#1a1620]/80 p-5 shadow-2xl backdrop-blur-2xl sm:max-h-[min(88dvh,40rem)] sm:rounded-[32px] sm:p-8"
+          style={{ background: "linear-gradient(160deg, rgba(36, 31, 45, 0.92) 0%, rgba(12, 10, 18, 0.96) 100%)" }}
+        >
+        <div className="pointer-events-none absolute -right-12 -top-12 h-48 w-48 rounded-full bg-[#6750a4]/20 blur-3xl sm:-right-8 sm:-top-8" />
+        <div className="pointer-events-none absolute -bottom-14 -left-12 h-48 w-48 rounded-full bg-[#7d5260]/15 blur-3xl" />
+        {session.phase === "upload" || session.phase === "sync" ? (
+          <div className="relative mx-auto mb-5 flex h-[4.5rem] w-[4.5rem] items-center justify-center sm:mb-7 sm:h-28 sm:w-28">
+            <div className="import-orbit absolute inset-0 rounded-full border-2 border-dashed border-[#d0bcff]/30" />
+            <div className="import-orbit-reverse absolute inset-[6px] rounded-full border-2 border-transparent border-t-[#d0bcff] border-r-[#9a82d4]/50 sm:inset-2" />
+            <div className="absolute inset-0 flex items-center justify-center text-xl font-bold tabular-nums tracking-tight text-[#e8def8] sm:text-3xl">
+              {Math.round(pct)}%
+            </div>
+          </div>
+        ) : null}
+        {session.phase === "done" ? (
+          <div
+            className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-[#4ade80]/30 bg-[#14532d]/30 text-3xl text-[#86efac] sm:mb-5 sm:h-20 sm:w-20 sm:rounded-3xl sm:text-4xl"
+            aria-hidden
+          >
+            ✓
+          </div>
+        ) : null}
+        {session.phase === "error" ? (
+          <div
+            className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl border border-[#f87171]/30 bg-[#7f1d1d]/25 text-2xl text-[#fecaca] sm:mb-4 sm:h-20 sm:w-20 sm:rounded-3xl"
+            aria-hidden
+          >
+            ×
+          </div>
+        ) : null}
+        <h2
+          id="import-overlay-title"
+          className="relative mb-1.5 text-center text-[clamp(1.05rem,3.5vw,1.35rem)] font-semibold leading-snug tracking-tight text-[#f5eff7]"
+        >
+          {session.phase === "upload" && "Bibliothek wird hochgeladen"}
+          {session.phase === "sync" && "Fast geschafft"}
+          {session.phase === "done" && "Import abgeschlossen"}
+          {session.phase === "error" && "Import fehlgeschlagen"}
+        </h2>
+        <div
+          id="import-overlay-desc"
+          className="relative mb-4 max-h-[min(34vh,220px)] overflow-y-auto text-pretty text-center text-sm leading-relaxed text-[#cac4d0] sm:mb-5 sm:max-h-none sm:text-[0.95rem] sm:leading-relaxed"
+        >
+          {session.phase === "error" ? (
+            <span className="whitespace-pre-wrap break-words">{session.errorMessage}</span>
+          ) : session.phase === "done" ? (
+            <span>{session.summary}</span>
+          ) : session.phase === "sync" ? (
+            "Cover & Metadaten werden geladen, Liste wird aktualisiert…"
+          ) : (
+            "Deine Titel werden sicher in kleinen Paketen übertragen. Bitte warte, bis der Vorgang beendet ist."
+          )}
+        </div>
+        {(session.phase === "upload" || session.phase === "sync") && (
+          <>
+            <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
+              <div className="rounded-2xl border border-white/8 bg-white/[0.04] px-3 py-2.5 text-center sm:py-3">
+                <div className="text-[0.7rem] font-medium uppercase tracking-wide text-[#938f99] sm:text-[0.72rem]">Datenvolumen</div>
+                <div className="mt-0.5 font-medium tabular-nums text-[#e6e0e9] sm:text-[0.95rem]">
+                  {formatBytes(session.doneBytes)} <span className="text-[#938f99]">/</span> {formatBytes(session.totalBytes || 0)}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-white/8 bg-white/[0.04] px-3 py-2.5 text-center sm:py-3">
+                <div className="text-[0.7rem] font-medium uppercase tracking-wide text-[#938f99] sm:text-[0.72rem]">Dateien</div>
+                <div className="mt-0.5 font-medium tabular-nums text-[#e6e0e9] sm:text-[0.95rem]">
+                  {session.doneFiles} <span className="text-[#938f99]">/</span> {session.totalFiles}
+                </div>
+              </div>
+            </div>
+            <div className="relative mb-2 h-2.5 w-full overflow-hidden rounded-full bg-[#14111a] ring-1 ring-inset ring-white/5 sm:h-3">
+              <div
+                className="import-progress-bar-fill h-full min-w-0 rounded-full transition-[width] duration-300 ease-out"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            {session.line2 && (session.phase === "upload" || session.phase === "sync") ? (
+              <p className="mb-0 text-center text-[0.7rem] leading-snug text-[#938f99] sm:text-xs break-words">{session.line2}</p>
+            ) : null}
+            <p className="mt-3 text-center text-[0.65rem] text-[#6f6a7a] sm:text-[0.7rem]">Stapel {session.batchIndex} / {session.batchCount}</p>
+          </>
+        )}
+        {(session.phase === "done" || session.phase === "error") && (
+          <button
+            type="button"
+            className="relative mt-1 min-h-[3rem] w-full touch-manipulation rounded-full bg-[#6750a4] px-4 py-3 text-base font-semibold text-[#f5eff7] shadow-lg shadow-[#37285c]/30 transition active:scale-[0.98] hover:brightness-110 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[#d0bcff] sm:min-h-[2.75rem] sm:py-2.5 sm:text-sm"
+            onClick={onClose}
+          >
+            Schliessen
+          </button>
+        )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function adjustColorLightness(color: { r: number; g: number; b: number }, delta: number): { r: number; g: number; b: number } {
@@ -245,10 +579,13 @@ export function App() {
   const [preset, setPreset] = useState<string>("");
   const [query, setQuery] = useState("");
   const [importTitle, setImportTitle] = useState("");
-  const [importProgress, setImportProgress] = useState("idle");
+  const [importSession, setImportSession] = useState<ImportSession>(null);
   const [selectedTrackIds, setSelectedTrackIds] = useState<string[]>([]);
   const [isEditMode, setIsEditMode] = useState(false);
   const [playlists, setPlaylists] = useState<{ id: string; name: string }[]>([]);
+  /** Virtual "Favoriten" or a user playlist opened from the Playlists tab. */
+  const [openPlaylist, setOpenPlaylist] = useState<null | "favorites" | { id: string; name: string }>(null);
+  const [userPlaylistTracks, setUserPlaylistTracks] = useState<Track[] | null>(null);
   const [playlistName, setPlaylistName] = useState("");
   const [sortBy, setSortBy] = useState<"title" | "artist" | "duration">("title");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -290,6 +627,11 @@ export function App() {
   const milkEngineRef = useRef<MilkEngine | null>(null);
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
   const moreMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [fullscreenMoreMenuPos, setFullscreenMoreMenuPos] = useState<{
+    top: number;
+    left: number;
+    transform: string;
+  } | null>(null);
   const filterMenuRef = useRef<HTMLDivElement | null>(null);
   const filterMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const tabs = ["tracks", "artists", "albums", "playlists"] as const;
@@ -384,6 +726,38 @@ export function App() {
   }, [userId, sessionId]);
 
   useEffect(() => {
+    if (tab !== "playlists") {
+      setOpenPlaylist(null);
+    }
+  }, [tab]);
+
+  useEffect(() => {
+    if (typeof openPlaylist !== "object" || openPlaylist === null) {
+      setUserPlaylistTracks(null);
+      return;
+    }
+    if (!sessionId) return;
+    let cancelled = false;
+    setUserPlaylistTracks(null);
+    const plId = openPlaylist.id;
+    void apiFetch(`/playlists/${plId}/items`, { sessionId })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: unknown) => {
+        if (cancelled) return;
+        const arr = Array.isArray(data) ? data : [];
+        setUserPlaylistTracks(
+          (arr as Track[]).map((t) => ({ ...t, is_favorite: Boolean(t.is_favorite) }))
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setUserPlaylistTracks([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [openPlaylist, sessionId]);
+
+  useEffect(() => {
     if (!sessionId) return;
     fetch(apiUrl(`/auth/session/${sessionId}`))
       .then((res) => res.json())
@@ -424,13 +798,8 @@ export function App() {
     ws.onmessage = (event) => {
       if (dead) return;
       try {
-        const message = JSON.parse(event.data) as { type?: string; processed?: number; total?: number; imported?: number };
-        if (message.type === "import.progress" && message.processed != null && message.total != null) {
-          setImportProgress(`${message.processed}/${message.total}`);
-        }
-        if (message.type === "import.done" && message.imported != null) {
-          setImportProgress(`done (${message.imported})`);
-        }
+        JSON.parse(event.data) as { type?: string; processed?: number; total?: number; imported?: number };
+        // Server-seitiger Ordner-Import: Fortschritt optional im Overlay, falls wir Session erweitern wollen
       } catch {
         // ignore
       }
@@ -450,6 +819,25 @@ export function App() {
       }
     };
   }, [sessionId]);
+
+  useEffect(() => {
+    if (importSession) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = prev;
+      };
+    }
+    return undefined;
+  }, [importSession]);
+
+  useEffect(() => {
+    if (importSession?.phase !== "done") return;
+    const t = window.setTimeout(() => {
+      setImportSession(null);
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [importSession?.phase]);
 
   useEffect(() => {
     const onResize = () => {
@@ -535,6 +923,10 @@ export function App() {
     });
     return list;
   }, [tracks, sortBy, sortDir]);
+  const favoriteTracks = useMemo(
+    () => sortedTracks.filter((t) => t.is_favorite),
+    [sortedTracks]
+  );
   const artistTracks = useMemo(
     () => (selectedArtist ? sortedTracks.filter((track) => track.artist === selectedArtist) : []),
     [selectedArtist, sortedTracks]
@@ -543,6 +935,43 @@ export function App() {
     () => (selectedAlbum ? sortedTracks.filter((track) => track.album === selectedAlbum) : []),
     [selectedAlbum, sortedTracks]
   );
+  const userPlaylistItemsResolved = useMemo(() => {
+    if (typeof openPlaylist !== "object" || !openPlaylist || !userPlaylistTracks) return null;
+    return userPlaylistTracks.map((ut) => {
+      const m = sortedTracks.find((t) => t.id === ut.id);
+      if (m) return m;
+      return { ...ut, source: "server" as const, is_favorite: Boolean(ut.is_favorite) };
+    });
+  }, [openPlaylist, userPlaylistTracks, sortedTracks]);
+
+  /** Gleiches Artwork wie in Künstler-/Alben-Listen, für große Hero-Ansicht. */
+  const detailArtistHeroTrack = useMemo(() => {
+    if (!selectedArtist) return null;
+    const fromNav = artists.find((a) => a.name === selectedArtist);
+    if (fromNav?.coverTrackId) {
+      return sortedTracks.find((t) => t.id === fromNav.coverTrackId) ?? artistTracks.find((t) => t.id === fromNav.coverTrackId) ?? null;
+    }
+    return artistTracks.find((t) => t.cover_path) ?? artistTracks[0] ?? null;
+  }, [selectedArtist, artists, artistTracks, sortedTracks]);
+
+  const detailAlbumHeroTrack = useMemo(() => {
+    if (!selectedAlbum) return null;
+    const fromNav = albums.find((a) => a.name === selectedAlbum);
+    if (fromNav?.coverTrackId) {
+      return sortedTracks.find((t) => t.id === fromNav.coverTrackId) ?? albumTracks.find((t) => t.id === fromNav.coverTrackId) ?? null;
+    }
+    return albumTracks.find((t) => t.cover_path) ?? albumTracks[0] ?? null;
+  }, [selectedAlbum, albums, albumTracks, sortedTracks]);
+
+  const albumDetailSubtitle = useMemo(() => {
+    if (!selectedAlbum) return "";
+    const n = albumTracks.length;
+    if (n === 0) return "Album · 0 Titel";
+    const u = new Set(albumTracks.map((t) => t.artist));
+    const by = u.size === 1 ? [...u][0]! : "Mehrere Künstler";
+    return `${by} · Album · ${n} Titel`;
+  }, [selectedAlbum, albumTracks]);
+
   const activeTrack = sortedTracks[currentTrackIndex];
   function openArtistPage(artistName: string): void {
     if (!artistName) return;
@@ -708,6 +1137,41 @@ export function App() {
       }
     };
   }, [isPlayerExpanded, playerViewMode, isBeatReactive, isPlaying]);
+
+  useLayoutEffect(() => {
+    if (!isFullscreenMenuOpen) {
+      setFullscreenMoreMenuPos(null);
+      return;
+    }
+    const update = () => {
+      const el = moreMenuTriggerRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const isSm = window.matchMedia("(min-width: 640px)").matches;
+      const halfW = 71;
+      const centerX = Math.max(halfW + 8, Math.min(rect.left + rect.width / 2, window.innerWidth - halfW - 8));
+      if (isSm) {
+        setFullscreenMoreMenuPos({
+          top: rect.bottom + 8,
+          left: centerX,
+          transform: "translateX(-50%)"
+        });
+      } else {
+        setFullscreenMoreMenuPos({
+          top: rect.top - 8,
+          left: centerX,
+          transform: "translate(-50%, -100%)"
+        });
+      }
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [isFullscreenMenuOpen, playerViewMode, preset]);
 
   useEffect(() => {
     if (!isFullscreenMenuOpen) return;
@@ -901,46 +1365,112 @@ export function App() {
     if (!userId || !sessionId) return;
     const files = (Array.isArray(fileList) ? fileList : Array.from(fileList)).map(withRelativePathForUpload);
     if (files.length === 0) return;
+    const totalBytesAll = files.reduce((s, f) => s + f.size, 0);
     const chunks = chunkFilesForImport(files);
+    setImportSession({
+      phase: "upload",
+      totalFiles: files.length,
+      doneFiles: 0,
+      totalBytes: totalBytesAll,
+      doneBytes: 0,
+      batchIndex: 0,
+      batchCount: chunks.length
+    });
     let totalImported = 0;
     let totalFailed = 0;
+    let doneBytes = 0;
     let aborted = false;
     try {
       for (let c = 0; c < chunks.length; c++) {
         const chunk = chunks[c];
+        const chunkBytes = chunk.reduce((s, f) => s + f.size, 0);
         const doneSoFar = chunks.slice(0, c).reduce((s, ch) => s + ch.length, 0);
-        setImportProgress(`uploading batch ${c + 1}/${chunks.length} (${doneSoFar + 1}–${doneSoFar + chunk.length} / ${files.length})`);
+        setImportSession((prev) =>
+          prev
+            ? {
+                ...prev,
+                batchIndex: c + 1,
+                line2: `Stapel ${c + 1} / ${chunks.length} · Dateien ${doneSoFar + 1}–${doneSoFar + chunk.length} / ${files.length}`,
+                doneFiles: doneSoFar,
+                doneBytes
+              }
+            : prev
+        );
         const form = new FormData();
         form.append("userId", userId);
         for (const file of chunk) form.append("files", file);
         const response = await apiFetch("/library/import-upload", { method: "POST", body: form, sessionId });
         if (!response.ok) {
-          setImportProgress(`Import unterbrochen: HTTP ${response.status} (Proxy-Größe/CORS/Netz).`);
+          setImportSession({
+            phase: "error",
+            errorMessage: `Hochladen abgebrochen: HTTP ${response.status} (Proxy-Größe, CORS oder Netz).`,
+            totalFiles: files.length,
+            doneFiles: doneSoFar,
+            totalBytes: totalBytesAll,
+            doneBytes,
+            batchIndex: c + 1,
+            batchCount: chunks.length
+          });
           aborted = true;
           break;
         }
         const result = (await response.json()) as { imported: number; failed?: number };
         totalImported += result.imported;
         totalFailed += result.failed ?? 0;
+        doneBytes += chunkBytes;
+        setImportSession((prev) =>
+          prev
+            ? {
+                ...prev,
+                doneFiles: doneSoFar + chunk.length,
+                doneBytes,
+                line2: `Stapel ${c + 1} / ${chunks.length} · verarbeitet ${doneSoFar + chunk.length} / ${files.length} Dateien`
+              }
+            : prev
+        );
       }
     } catch (e) {
       console.error(e);
-      setImportProgress(
-        "Import fehlgeschlagen: Netzwerk, Timeout, CORS oder Request zu groß (Reverse-Proxy, siehe README)."
-      );
+      setImportSession({
+        phase: "error",
+        errorMessage: "Netzwerk, Timeout, CORS oder Request zu groß. Siehe README (Proxy, CORS_ORIGINS).",
+        totalFiles: files.length,
+        doneFiles: 0,
+        totalBytes: totalBytesAll,
+        doneBytes: 0,
+        batchIndex: 0,
+        batchCount: chunks.length
+      });
       aborted = true;
-    } finally {
+    }
+    if (!aborted) {
+      setImportSession((prev) =>
+        prev && prev.phase === "upload" ? { ...prev, phase: "sync", line2: "Bibliothek & Cover werden geladen…" } : prev
+      );
       try {
         await refreshLibraryFromServer();
       } catch {
         // CORS/offline: ignore
       }
-    }
-    if (aborted) return;
-    if (totalFailed > 0) {
-      setImportProgress(`${totalImported} importiert, ${totalFailed} übersprungen (Fehler)`);
+      setImportSession({
+        phase: "done",
+        totalFiles: files.length,
+        doneFiles: files.length,
+        totalBytes: totalBytesAll,
+        doneBytes: totalBytesAll,
+        batchIndex: chunks.length,
+        batchCount: chunks.length,
+        summary:
+          totalFailed > 0
+            ? `${totalImported} importiert, ${totalFailed} mit Hinweis übersprungen.`
+            : `${totalImported} Dateien in der Cloud-Bibliothek.`
+      });
     } else {
-      setImportProgress(`${totalImported} Dateien importiert`);
+      try {
+        await refreshLibraryFromServer();
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -969,43 +1499,41 @@ export function App() {
       };
       await walk(handle, "");
       if (collected.length === 0) {
-        setImportProgress("keine Audiodateien im Ordner");
+        setImportSession({
+          phase: "error",
+          errorMessage: "Keine unterstützten Audiodateien in diesem Ordner.",
+          totalFiles: 0,
+          doneFiles: 0,
+          totalBytes: 0,
+          doneBytes: 0,
+          batchIndex: 0,
+          batchCount: 0
+        });
         return;
       }
       await uploadAndPersistFiles(collected);
     } catch {
-      setImportProgress("folder picker cancelled");
+      setImportSession(null);
     }
   }
 
   async function importLocalFiles(files: FileList | File[] | null) {
     if (!files || files.length === 0) return;
     const fileArr = (Array.isArray(files) ? files : Array.from(files)).map(withRelativePathForUpload);
-    const imported: Track[] = [];
-    fileArr.forEach((file, idx) => {
-      const base = file.name.split(/[/\\]/).pop() ?? file.name;
-      const name = base.replace(/\.[^/.]+$/, "");
-      imported.push({
-        id: `local-${Date.now()}-${idx}-${newRandomId()}`,
-        title: importTitle.trim() ? `${importTitle.trim()} - ${name}` : name,
-        artist: "Lokale Datei",
-        album: "Lokaler Import",
-        duration_sec: 0,
-        file_path: file.name,
-        source: "local",
-        object_url: URL.createObjectURL(file)
-      });
-    });
-    setTracks((prev) => {
-      const nextTracks = [...imported, ...prev];
-      queue.load(nextTracks.map((t) => t.id));
-      return nextTracks;
-    });
     try {
       await uploadAndPersistFiles(fileArr);
     } catch (e) {
       console.error(e);
-      setImportProgress("Server-Import fehlgeschlagen (Netz/CORS/Timeout).");
+      setImportSession({
+        phase: "error",
+        errorMessage: "Server-Import fehlgeschlagen (Netz/CORS/Timeout).",
+        totalFiles: fileArr.length,
+        doneFiles: 0,
+        totalBytes: 0,
+        doneBytes: 0,
+        batchIndex: 0,
+        batchCount: 0
+      });
     }
   }
 
@@ -1024,17 +1552,34 @@ export function App() {
   }
 
   async function createPlaylistFromSelection() {
-    if (!playlistName || !selectedTrackIds.length || !userId || !sessionId) return;
-    await apiFetch("/playlist/create", {
+    const name = playlistName.trim();
+    if (!userId || !sessionId) {
+      setAuthMessage("Nicht angemeldet.");
+      return;
+    }
+    if (!name) {
+      setAuthMessage("Bitte einen Playlist-Namen eingeben.");
+      return;
+    }
+    const response = await apiFetch("/playlist/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, name: playlistName, trackIds: selectedTrackIds }),
+      body: JSON.stringify({ userId, name, trackIds: selectedTrackIds }),
       sessionId
     });
+    if (!response.ok) {
+      setAuthMessage(`Playlist konnte nicht erstellt werden (HTTP ${response.status}).`);
+      return;
+    }
     setPlaylistName("");
     setSelectedTrackIds([]);
     const data = await apiFetch(`/users/${userId}/playlists`, { sessionId }).then((res) => res.json());
     setPlaylists(data);
+    setAuthMessage(
+      selectedTrackIds.length > 0
+        ? `Playlist „${name}“ mit ${selectedTrackIds.length} Titel(n) erstellt.`
+        : `Leere Playlist „${name}“ erstellt — Titel unter „Titel“ hinzufügen oder hier öffnen und Einträge ergänzen.`
+    );
   }
 
   async function createPlaylistWithTrack(track: Track) {
@@ -1095,8 +1640,13 @@ export function App() {
     const data = await response.json() as { token?: string };
     if (data.token) {
       const shareUrl = `${window.location.origin}/share/${data.token}`;
-      await navigator.clipboard.writeText(shareUrl).catch(() => {});
-      setAuthMessage("Share-Link kopiert.");
+      const copied = await copyTextToClipboard(shareUrl);
+      if (copied) {
+        setAuthMessage("Share-Link kopiert.");
+      } else {
+        window.prompt("Share-Link (markieren und kopieren):", shareUrl);
+        setAuthMessage("Link erscheint im Dialog, falls das automatische Kopieren nicht möglich war.");
+      }
     }
     setOpenTrackMenuId(null);
   }
@@ -1524,6 +2074,7 @@ export function App() {
       }).catch(() => {});
     }
     setPlaylists((prev) => prev.filter((p) => p.id !== playlistId));
+    setOpenPlaylist((op) => (op && typeof op === "object" && op.id === playlistId ? null : op));
   }
 
   if (!sessionId && !isAnonymousShareMode) {
@@ -1576,9 +2127,44 @@ export function App() {
     );
   }
 
+  const libraryBackVisible =
+    tab !== "tracks" || selectedArtist !== null || selectedAlbum !== null || openPlaylist !== null;
+
+  const onLibraryBack = () => {
+    if (openPlaylist) {
+      setOpenPlaylist(null);
+      return;
+    }
+    if (selectedArtist) {
+      setSelectedArtist(null);
+      return;
+    }
+    if (selectedAlbum) {
+      setSelectedAlbum(null);
+      return;
+    }
+    setTab("tracks");
+  };
+
   return (
     <AppShell
       title="Musicrr"
+      headerLeft={
+        libraryBackVisible ? (
+          <button
+            type="button"
+            className="panel-icon-btn -ml-0.5 h-9 min-w-9 px-0"
+            title={openPlaylist || selectedArtist || selectedAlbum ? "Eine Ebene zurueck" : "Zur Titel-Liste wechseln"}
+            aria-label="Zurueck"
+            onClick={onLibraryBack}
+          >
+            <IconBase>
+              <path d="M19 12H5" />
+              <path d="M12 19l-7-7 7-7" />
+            </IconBase>
+          </button>
+        ) : null
+      }
       headerRight={
         !isAnonymousShareMode ? (
           <button className="panel-icon-btn" title="Logout" aria-label="Logout" onClick={logout}>
@@ -1730,8 +2316,9 @@ export function App() {
                 placeholder="Playlist Name"
               />
               <button
+                type="button"
                 className="rounded-full border border-[#4a4458] bg-[#2b2930] px-4 py-2 text-sm font-medium text-[#f5eff7] hover:bg-[#36303e]"
-                onClick={createPlaylistFromSelection}
+                onClick={() => void createPlaylistFromSelection()}
               >
                 Zur Playlist
               </button>
@@ -1802,7 +2389,16 @@ export function App() {
               if (!list || list.length === 0) return;
               const audio = Array.from(list).filter((f) => isLikelyAudioFile(f));
               if (audio.length === 0) {
-                setImportProgress("keine Audiodateien im Ordner");
+                setImportSession({
+                  phase: "error",
+                  errorMessage: "Keine unterstützten Audiodateien in diesem Ordner.",
+                  totalFiles: 0,
+                  doneFiles: 0,
+                  totalBytes: 0,
+                  doneBytes: 0,
+                  batchIndex: 0,
+                  batchCount: 0
+                });
                 return;
               }
               void importLocalFiles(audio);
@@ -1813,7 +2409,7 @@ export function App() {
               {sortedTracks.map((track, idx) => (
                 <div
                   key={track.id}
-                  className={`flex items-start gap-2 rounded-2xl border px-2 py-2 transition sm:items-center sm:gap-3 sm:px-3 ${
+                  className={`flex items-stretch gap-2 rounded-2xl border px-2 py-2 transition sm:gap-3 sm:px-3 ${
                     selectedTrackIds.includes(track.id) && isEditMode
                       ? "border-[#d0bcff] bg-[#3a314b]"
                       : "border-[#4a4458] bg-[#2b2930] hover:bg-[#36303e]"
@@ -1821,7 +2417,8 @@ export function App() {
                 >
                   {isEditMode ? (
                     <button
-                      className={`h-5 w-5 rounded-md border ${
+                      type="button"
+                      className={`mt-0.5 h-5 w-5 shrink-0 self-start rounded-md border sm:mt-0 ${
                         selectedTrackIds.includes(track.id) ? "border-[#d0bcff] bg-[#d0bcff]" : "border-[#938f99] bg-transparent"
                       }`}
                       onClick={() => toggleTrackSelection(track.id)}
@@ -1831,7 +2428,8 @@ export function App() {
                     </button>
                   ) : null}
                   <button
-                    className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left"
+                    type="button"
+                    className="flex min-h-12 min-w-0 flex-1 items-center justify-between gap-2 self-stretch text-left sm:min-h-10"
                     onClick={() => {
                       if (isEditMode) {
                         toggleTrackSelection(track.id);
@@ -1840,27 +2438,27 @@ export function App() {
                       play(idx);
                     }}
                   >
-                    <span className="flex min-w-0 items-center gap-2">
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
                       <CoverArtSlot
-                        className="h-8 w-8 rounded-md border border-[#4a4458]"
+                        className="h-8 w-8 shrink-0 rounded-md border border-[#4a4458]"
                         hasCover={Boolean(track.cover_path)}
                         coverUrl={murl(`/media/track/${track.id}/cover`)}
                         label={track.title}
                       />
                       {editingTrackId === track.id ? (
                         <input
-                          className="rounded-lg border border-[#4a4458] bg-[#1f1b24] px-2 py-1 text-sm text-[#f5eff7]"
+                          className="min-w-0 flex-1 rounded-lg border border-[#4a4458] bg-[#1f1b24] px-2 py-1 text-sm text-[#f5eff7]"
                           value={editingTrackTitle}
                           onChange={(e) => setEditingTrackTitle(e.target.value)}
                         />
                       ) : (
-                        <span className="min-w-0 truncate text-sm text-[#f5eff7]">
+                        <span className="block min-w-0 flex-1 truncate text-left text-sm text-[#f5eff7]">
                           <span className="font-medium">{track.title}</span>
                           <span className="text-[#cac4d0]"> - {track.artist}</span>
                         </span>
                       )}
                     </span>
-                    <span className="shrink-0 text-[11px] text-[#938f99] sm:text-xs">{track.duration_sec}s</span>
+                    <span className="shrink-0 self-center pl-1 text-[11px] text-[#938f99] sm:text-xs">{track.duration_sec}s</span>
                   </button>
                   {!isEditMode && editingTrackId === track.id ? (
                     <button
@@ -1870,8 +2468,9 @@ export function App() {
                       Save
                     </button>
                   ) : !isEditMode ? (
-                    <div className="relative">
+                    <div className="relative flex shrink-0 self-center">
                       <button
+                        type="button"
                         className="panel-icon-btn h-8 min-w-8 px-2"
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={() => setOpenTrackMenuId((prev) => (prev === track.id ? null : track.id))}
@@ -1919,40 +2518,50 @@ export function App() {
           {tab === "artists" && (
             selectedArtist ? (
               <div className="mx-auto w-full max-w-3xl space-y-2">
-                <div className="mb-1 flex items-center justify-between rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2">
-                  <span className="truncate text-sm font-semibold text-[#f5eff7]">{selectedArtist}</span>
-                  <button
-                    className="rounded-full border border-[#4a4458] bg-[#1f1b24] px-3 py-1 text-xs text-[#e6e0e9]"
-                    onClick={() => setSelectedArtist(null)}
-                  >
-                    Zur Liste
-                  </button>
-                </div>
-                {artistTracks.map((track, idx) => (
-                  <button
-                    key={track.id}
-                    className="flex w-full items-center justify-between rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-left hover:bg-[#36303e]"
-                    onClick={() => play(sortedTracks.findIndex((t) => t.id === track.id) >= 0 ? sortedTracks.findIndex((t) => t.id === track.id) : idx)}
-                  >
-                    <span className="min-w-0 truncate text-sm text-[#f5eff7]">{track.title}</span>
-                    <span className="shrink-0 text-xs text-[#938f99]">{track.duration_sec}s</span>
-                  </button>
-                ))}
+                <LibraryDetailHero
+                  title={selectedArtist}
+                  subtitle={artistTracks.length ? `${artistTracks.length} Titel` : "Keine Titel in der Bibliothek"}
+                >
+                  {detailArtistHeroTrack ? (
+                    <CoverArtSlot
+                      className="h-[min(58vw,280px)] w-[min(58vw,280px)] border-2 border-white/15 shadow-2xl sm:h-64 sm:w-64 rounded-full"
+                      hasCover={Boolean(detailArtistHeroTrack.cover_path)}
+                      coverUrl={murl(`/media/track/${detailArtistHeroTrack.id}/cover`)}
+                      label={selectedArtist}
+                    />
+                  ) : (
+                    <CoverArtSlot
+                      className="h-[min(58vw,280px)] w-[min(58vw,280px)] border-2 border-white/15 shadow-2xl sm:h-64 sm:w-64 rounded-full"
+                      hasCover={false}
+                      coverUrl=""
+                      label={selectedArtist}
+                    />
+                  )}
+                </LibraryDetailHero>
+                <DetailTrackListView
+                  tracks={artistTracks}
+                  formatDuration={formatTime}
+                  onRowClick={(track, idx) => {
+                    const j = sortedTracks.findIndex((t) => t.id === track.id);
+                    play(j >= 0 ? j : idx);
+                  }}
+                />
               </div>
             ) : (
               artists.map((artist) => (
                 <button
                   key={artist.name}
-                  className="mx-auto flex w-full max-w-3xl items-center gap-3 rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-left hover:bg-[#36303e]"
+                  type="button"
+                  className="mx-auto flex w-full min-h-11 max-w-3xl items-center gap-3 rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-left hover:bg-[#36303e]"
                   onClick={() => openArtistPage(artist.name)}
                 >
                   <CoverArtSlot
-                    className="h-10 w-10 rounded-full border border-[#4a4458]"
+                    className="h-10 w-10 shrink-0 rounded-full border border-[#4a4458]"
                     hasCover={Boolean(artist.coverTrackId)}
                     coverUrl={artist.coverTrackId ? murl(`/media/track/${artist.coverTrackId}/cover`) : ""}
                     label={artist.name}
                   />
-                  <span className="truncate text-sm text-[#f5eff7]">{artist.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-left text-sm text-[#f5eff7]">{artist.name}</span>
                 </button>
               ))
             )
@@ -1960,68 +2569,177 @@ export function App() {
           {tab === "albums" && (
             selectedAlbum ? (
               <div className="mx-auto w-full max-w-3xl space-y-2">
-                <div className="mb-1 flex items-center justify-between rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2">
-                  <span className="truncate text-sm font-semibold text-[#f5eff7]">{selectedAlbum}</span>
-                  <button
-                    className="rounded-full border border-[#4a4458] bg-[#1f1b24] px-3 py-1 text-xs text-[#e6e0e9]"
-                    onClick={() => setSelectedAlbum(null)}
-                  >
-                    Zur Liste
-                  </button>
-                </div>
-                {albumTracks.map((track, idx) => (
-                  <button
-                    key={track.id}
-                    className="flex w-full items-center justify-between rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-left hover:bg-[#36303e]"
-                    onClick={() => play(sortedTracks.findIndex((t) => t.id === track.id) >= 0 ? sortedTracks.findIndex((t) => t.id === track.id) : idx)}
-                  >
-                    <span className="min-w-0 truncate text-sm text-[#f5eff7]">{track.title}</span>
-                    <span className="shrink-0 text-xs text-[#938f99]">{track.duration_sec}s</span>
-                  </button>
-                ))}
+                <LibraryDetailHero title={selectedAlbum} subtitle={albumDetailSubtitle}>
+                  {detailAlbumHeroTrack ? (
+                    <CoverArtSlot
+                      className="h-[min(58vw,280px)] w-[min(58vw,280px)] border-2 border-white/15 shadow-2xl sm:h-64 sm:w-64 rounded-3xl"
+                      hasCover={Boolean(detailAlbumHeroTrack.cover_path)}
+                      coverUrl={murl(`/media/track/${detailAlbumHeroTrack.id}/cover`)}
+                      label={selectedAlbum}
+                    />
+                  ) : (
+                    <CoverArtSlot
+                      className="h-[min(58vw,280px)] w-[min(58vw,280px)] border-2 border-white/15 shadow-2xl sm:h-64 sm:w-64 rounded-3xl"
+                      hasCover={false}
+                      coverUrl=""
+                      label={selectedAlbum}
+                    />
+                  )}
+                </LibraryDetailHero>
+                <DetailTrackListView
+                  tracks={albumTracks}
+                  formatDuration={formatTime}
+                  onRowClick={(track, idx) => {
+                    const j = sortedTracks.findIndex((t) => t.id === track.id);
+                    play(j >= 0 ? j : idx);
+                  }}
+                />
               </div>
             ) : (
               albums.map((album) => (
                 <button
                   key={album.name}
-                  className="mx-auto flex w-full max-w-3xl items-center gap-3 rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-left hover:bg-[#36303e]"
+                  type="button"
+                  className="mx-auto flex w-full min-h-11 max-w-3xl items-center gap-3 rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-left hover:bg-[#36303e]"
                   onClick={() => openAlbumPage(album.name)}
                 >
                   <CoverArtSlot
-                    className="h-10 w-10 rounded-lg border border-[#4a4458]"
+                    className="h-10 w-10 shrink-0 rounded-lg border border-[#4a4458]"
                     hasCover={Boolean(album.coverTrackId)}
                     coverUrl={album.coverTrackId ? murl(`/media/track/${album.coverTrackId}/cover`) : ""}
                     label={album.name}
                   />
-                  <span className="truncate text-sm text-[#f5eff7]">{album.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-left text-sm text-[#f5eff7]">{album.name}</span>
                 </button>
               ))
             )
           )}
           {tab === "playlists" && (
             <div className="mx-auto w-full max-w-3xl space-y-3">
-              <div className="grid grid-cols-1 gap-2 sm:flex">
-                <input
-                  className="flex-1 rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 py-2 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff]"
-                  value={playlistName}
-                  onChange={(e) => setPlaylistName(e.target.value)}
-                  placeholder="Neue Playlist"
-                />
-                <button className="rounded-full bg-[#7d5260] px-4 py-2 text-sm font-medium text-[#f5eff7]" onClick={createPlaylistFromSelection}>
-                  Aus Auswahl erstellen
-                </button>
-              </div>
-              {playlists.map((playlist) => (
-                <div key={playlist.id} className="flex items-center justify-between rounded-2xl border border-[#4a4458] bg-[#2b2930] p-3 text-[#f5eff7]">
-                  <span>{playlist.name}</span>
+              {openPlaylist === null ? (
+                <>
+                  <div className="grid grid-cols-1 gap-2 sm:flex">
+                    <input
+                      className="flex-1 rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 py-2 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff]"
+                      value={playlistName}
+                      onChange={(e) => setPlaylistName(e.target.value)}
+                      placeholder="Neue Playlist"
+                    />
+                    <button
+                      type="button"
+                      className="rounded-full bg-[#7d5260] px-4 py-2 text-sm font-medium text-[#f5eff7]"
+                      onClick={() => void createPlaylistFromSelection()}
+                    >
+                      Playlist erstellen
+                    </button>
+                  </div>
+                  <p className="text-xs text-[#938f99]">
+                    Ohne Markierung in der Titel-Liste wird eine <span className="text-[#cac4d0]">leere</span> Playlist angelegt.
+                    Markierungen nimmst du unter <span className="text-[#cac4d0]">Titel</span> im Edit-Modus vor.
+                  </p>
+
                   <button
-                    className="rounded-full border border-[#4a4458] bg-[#1f1b24] px-3 py-1 text-xs text-[#e6e0e9]"
-                    onClick={() => deletePlaylist(playlist.id)}
+                    type="button"
+                    className="flex w-full min-h-11 items-center justify-between gap-2 rounded-2xl border border-[#d0bcff]/40 bg-[#322846] p-3 text-left transition hover:bg-[#3d3254]"
+                    onClick={() => setOpenPlaylist("favorites")}
                   >
-                    Delete
+                    <span className="flex min-w-0 items-center gap-3">
+                      <PlaylistListThumb tracks={favoriteTracks} murl={murl} />
+                      <span className="min-w-0">
+                        <span className="block font-medium text-[#f5eff7]">Favoriten</span>
+                        <span className="text-xs text-[#cac4d0]">Aktualisiert sich aus Stern-Favoriten</span>
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-xs text-[#938f99]">{favoriteTracks.length} Titel</span>
                   </button>
+
+                  {playlists.map((playlist) => (
+                    <div
+                      key={playlist.id}
+                      className="flex items-center justify-between gap-2 rounded-2xl border border-[#4a4458] bg-[#2b2930] p-3 text-[#f5eff7]"
+                    >
+                      <button
+                        type="button"
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left hover:opacity-90"
+                        onClick={() => setOpenPlaylist({ id: playlist.id, name: playlist.name })}
+                      >
+                        <CoverArtSlot
+                          className="h-12 w-12 shrink-0 rounded-lg border border-white/10"
+                          hasCover={false}
+                          coverUrl=""
+                          label={playlist.name}
+                        />
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-[#f5eff7]">{playlist.name}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="shrink-0 rounded-full border border-[#4a4458] bg-[#1f1b24] px-3 py-1 text-xs text-[#e6e0e9] hover:bg-[#2a2630]"
+                        onClick={() => void deletePlaylist(playlist.id)}
+                      >
+                        Loeschen
+                      </button>
+                    </div>
+                  ))}
+                </>
+              ) : openPlaylist === "favorites" ? (
+                <div className="space-y-2">
+                  <LibraryDetailHero
+                    title="Favoriten"
+                    subtitle={
+                      favoriteTracks.length
+                        ? `${favoriteTracks.length} Titel · aus deinen Stern-Favoriten`
+                        : "Noch leer — unter Titel mit „…“ Titel markieren"
+                    }
+                  >
+                    <PlaylistCollageArt tracks={favoriteTracks} murl={murl} />
+                  </LibraryDetailHero>
+                  {favoriteTracks.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-[#4a4458] bg-[#211f28] px-3 py-4 text-sm text-[#cac4d0]">
+                      Noch keine Favoriten. Titel-Liste öffnen, &quot;…&quot; am Song, Add to Favorites.
+                    </p>
+                  ) : (
+                    <DetailTrackListView
+                      tracks={favoriteTracks}
+                      formatDuration={formatTime}
+                      onRowClick={(track) => {
+                        const i = sortedTracks.findIndex((t) => t.id === track.id);
+                        if (i >= 0) play(i);
+                      }}
+                    />
+                  )}
                 </div>
-              ))}
+              ) : (
+                <div className="space-y-2">
+                  <LibraryDetailHero
+                    title={openPlaylist.name}
+                    subtitle={
+                      userPlaylistItemsResolved === null
+                        ? "Laden…"
+                        : `${userPlaylistItemsResolved.length} Titel`
+                    }
+                  >
+                    {userPlaylistItemsResolved === null ? (
+                      <div className="flex h-64 w-64 items-center justify-center rounded-2xl border border-white/10 bg-[#1a1722]">
+                        <NeonLoader />
+                      </div>
+                    ) : (
+                      <PlaylistCollageArt tracks={userPlaylistItemsResolved} murl={murl} />
+                    )}
+                  </LibraryDetailHero>
+                  {userPlaylistItemsResolved === null ? null : userPlaylistItemsResolved.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-[#4a4458] bg-[#211f28] px-3 py-4 text-sm text-[#cac4d0]">Diese Playlist ist leer.</p>
+                  ) : (
+                    <DetailTrackListView
+                      tracks={userPlaylistItemsResolved}
+                      formatDuration={formatTime}
+                      onRowClick={(track) => {
+                        const i = sortedTracks.findIndex((t) => t.id === track.id);
+                        if (i >= 0) play(i);
+                      }}
+                    />
+                  )}
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -2029,18 +2747,22 @@ export function App() {
 
       <footer className="fixed inset-x-2 bottom-3 z-30 rounded-[20px] border border-white/15 bg-white/8 p-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl sm:inset-x-4 sm:bottom-5 sm:rounded-[24px] sm:p-3 md:inset-x-6">
         <div className="grid gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-center">
-          <button className="flex items-center gap-3 text-left" onClick={() => setIsPlayerExpanded(true)}>
+          <button
+            type="button"
+            className="flex w-full min-w-0 items-center gap-3 py-1 text-left"
+            onClick={() => setIsPlayerExpanded(true)}
+          >
             {activeTrack ? (
               <CoverArtSlot
-                className={`h-11 w-11 rounded-xl border border-[#4a4458] sm:h-14 sm:w-14 sm:rounded-2xl ${isPlaying ? "animate-pulse" : ""}`}
+                className={`h-11 w-11 shrink-0 rounded-xl border border-[#4a4458] sm:h-14 sm:w-14 sm:rounded-2xl ${isPlaying ? "animate-pulse" : ""}`}
                 hasCover={Boolean(activeTrack.cover_path)}
                 coverUrl={murl(`/media/track/${activeTrack.id}/cover`)}
                 label={activeTrack.title}
               />
             ) : null}
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-[#f5eff7]">{activeTrack?.title ?? "Nichts abgespielt"}</div>
-              <div className="truncate text-xs text-[#cac4d0]">{activeTrack?.artist ?? "Kein Artist"}</div>
+            <div className="flex min-w-0 flex-1 flex-col justify-center self-stretch">
+              <div className="line-clamp-1 w-full text-sm font-semibold text-[#f5eff7]">{activeTrack?.title ?? "Nichts abgespielt"}</div>
+              <div className="line-clamp-1 w-full text-xs text-[#cac4d0]">{activeTrack?.artist ?? "Kein Artist"}</div>
             </div>
           </button>
 
@@ -2330,97 +3052,110 @@ export function App() {
                     <circle cx="18" cy="12" r="1.6" />
                   </IconBase>
                 </button>
-
-                {isFullscreenMenuOpen ? (
-                  <div
-                    ref={moreMenuRef}
-                    className="fullscreen-more-menu absolute bottom-full left-1/2 z-40 mb-2 w-fit min-w-[142px] -translate-x-1/2 overflow-hidden rounded-2xl p-2 sm:bottom-auto sm:top-full sm:mb-0 sm:mt-2"
-                  >
-                    <span
-                      aria-hidden
-                      className="pointer-events-none absolute inset-0"
-                      style={{
-                        background:
-                          "radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--accent-a) 30%, transparent) 0%, transparent 62%), radial-gradient(circle at 80% 70%, color-mix(in srgb, var(--accent-b) 26%, transparent) 0%, transparent 64%), radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent-c) 18%, transparent) 0%, transparent 70%)",
-                        filter: "blur(16px)",
-                        opacity: 0.52
-                      }}
-                    />
-                    <span aria-hidden className="fullscreen-more-frost pointer-events-none absolute inset-0" />
-                    <div className="mb-1.5 flex items-center justify-center gap-1.5">
-                      <button
-                        className="fullscreen-more-btn relative h-9 min-w-9 rounded-full px-2 text-[#f5eff7]"
-                        title={playerViewMode === "gradient" ? "Visualizer anzeigen" : "Gradient anzeigen"}
-                        aria-label={playerViewMode === "gradient" ? "Visualizer anzeigen" : "Gradient anzeigen"}
-                        onClick={() => {
-                          setPlayerViewMode((current) => (current === "gradient" ? "visualizer" : "gradient"));
-                          setIsFullscreenMenuOpen(false);
-                        }}
-                      >
-                        <IconBase>
-                          <path d="M4 6h16v12H4z" />
-                          <path d="M8 10h2v4H8zM12 8h2v8h-2zM16 11h2v2h-2z" />
-                        </IconBase>
-                      </button>
-                      <button
-                        className="fullscreen-more-btn relative h-9 min-w-9 rounded-full px-2 text-[#f5eff7]"
-                        title="Lyrics"
-                        aria-label="Lyrics"
-                        onClick={() => {
-                          setIsLyricsOpen(true);
-                          setIsFullscreenMenuOpen(false);
-                        }}
-                      >
-                        <IconBase>
-                          <path d="M6 4h12" />
-                          <path d="M6 9h12" />
-                          <path d="M6 14h7" />
-                          <path d="M6 19h5" />
-                        </IconBase>
-                      </button>
-                      <button
-                        className={`fullscreen-more-btn relative h-9 min-w-9 rounded-full px-2 text-[#f5eff7] ${
-                          isBeatReactive ? "fullscreen-more-btn-active" : ""
-                        }`}
-                        title={isBeatReactive ? "Beat FX deaktivieren" : "Beat FX aktivieren"}
-                        aria-label={isBeatReactive ? "Beat FX deaktivieren" : "Beat FX aktivieren"}
-                        disabled={playerViewMode === "visualizer"}
-                        onClick={() => {
-                          if (playerViewMode === "visualizer") return;
-                          setIsBeatReactive((v) => !v);
-                        }}
-                      >
-                        <IconBase>
-                          <path d="M4 13h3l2-6 3 12 2-6h6" />
-                        </IconBase>
-                      </button>
-                    </div>
-
-                    {playerViewMode === "visualizer" ? (
-                      <select
-                        value={preset}
-                        onChange={(e) => setPreset(e.target.value)}
-                        className="fullscreen-preset-select w-full min-w-0 max-w-full appearance-none rounded-xl border border-white/20 bg-white/10 px-2.5 py-1.5 pr-8 text-xs text-[#e6e0e9] backdrop-blur-xl"
-                        style={{ colorScheme: "dark" }}
-                      >
-                        {visualPresets.length === 0 && (
-                          <option value="" style={{ backgroundColor: "#1a1622", color: "#f5eff7" }}>
-                            Keine Presets in visual/ gefunden
-                          </option>
-                        )}
-                        {visualPresets.map((name) => (
-                          <option key={name} value={name} style={{ backgroundColor: "#1a1622", color: "#f5eff7" }}>
-                            {name.replace(/\.(milk|json|preset)$/i, "")}
-                          </option>
-                        ))}
-                      </select>
-                    ) : null}
-                  </div>
-                ) : null}
               </div>
               </div>
             </section>
           </div>
+
+          {isFullscreenMenuOpen && fullscreenMoreMenuPos && typeof document !== "undefined"
+            ? createPortal(
+                <div
+                  ref={moreMenuRef}
+                  className="fullscreen-more-menu fixed z-[100] w-fit min-w-[142px] overflow-hidden rounded-2xl p-2"
+                  style={
+                    {
+                      top: fullscreenMoreMenuPos.top,
+                      left: fullscreenMoreMenuPos.left,
+                      transform: fullscreenMoreMenuPos.transform,
+                      ["--accent-a" as string]: accentA,
+                      ["--accent-b" as string]: accentB,
+                      ["--accent-c" as string]: accentC
+                    } as React.CSSProperties
+                  }
+                >
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0"
+                    style={{
+                      background:
+                        "radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--accent-a) 30%, transparent) 0%, transparent 62%), radial-gradient(circle at 80% 70%, color-mix(in srgb, var(--accent-b) 26%, transparent) 0%, transparent 64%), radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent-c) 18%, transparent) 0%, transparent 70%)",
+                      filter: "blur(16px)",
+                      opacity: 0.52
+                    }}
+                  />
+                  <span aria-hidden className="fullscreen-more-frost pointer-events-none absolute inset-0" />
+                  <div className="mb-1.5 flex items-center justify-center gap-1.5">
+                    <button
+                      className="fullscreen-more-btn relative h-9 min-w-9 rounded-full px-2 text-[#f5eff7]"
+                      title={playerViewMode === "gradient" ? "Visualizer anzeigen" : "Gradient anzeigen"}
+                      aria-label={playerViewMode === "gradient" ? "Visualizer anzeigen" : "Gradient anzeigen"}
+                      onClick={() => {
+                        setPlayerViewMode((current) => (current === "gradient" ? "visualizer" : "gradient"));
+                        setIsFullscreenMenuOpen(false);
+                      }}
+                    >
+                      <IconBase>
+                        <path d="M4 6h16v12H4z" />
+                        <path d="M8 10h2v4H8zM12 8h2v8h-2zM16 11h2v2h-2z" />
+                      </IconBase>
+                    </button>
+                    <button
+                      className="fullscreen-more-btn relative h-9 min-w-9 rounded-full px-2 text-[#f5eff7]"
+                      title="Lyrics"
+                      aria-label="Lyrics"
+                      onClick={() => {
+                        setIsLyricsOpen(true);
+                        setIsFullscreenMenuOpen(false);
+                      }}
+                    >
+                      <IconBase>
+                        <path d="M6 4h12" />
+                        <path d="M6 9h12" />
+                        <path d="M6 14h7" />
+                        <path d="M6 19h5" />
+                      </IconBase>
+                    </button>
+                    <button
+                      className={`fullscreen-more-btn relative h-9 min-w-9 rounded-full px-2 text-[#f5eff7] ${
+                        isBeatReactive ? "fullscreen-more-btn-active" : ""
+                      }`}
+                      title={isBeatReactive ? "Beat FX deaktivieren" : "Beat FX aktivieren"}
+                      aria-label={isBeatReactive ? "Beat FX deaktivieren" : "Beat FX aktivieren"}
+                      disabled={playerViewMode === "visualizer"}
+                      onClick={() => {
+                        if (playerViewMode === "visualizer") return;
+                        setIsBeatReactive((v) => !v);
+                      }}
+                    >
+                      <IconBase>
+                        <path d="M4 13h3l2-6 3 12 2-6h6" />
+                      </IconBase>
+                    </button>
+                  </div>
+
+                  {playerViewMode === "visualizer" ? (
+                    <select
+                      value={preset}
+                      onChange={(e) => setPreset(e.target.value)}
+                      className="fullscreen-preset-select w-full min-w-0 max-w-full appearance-none rounded-xl border border-white/20 bg-white/10 px-2.5 py-1.5 pr-8 text-xs text-[#e6e0e9] backdrop-blur-xl"
+                      style={{ colorScheme: "dark" }}
+                    >
+                      {visualPresets.length === 0 && (
+                        <option value="" style={{ backgroundColor: "#1a1622", color: "#f5eff7" }}>
+                          Keine Presets in visual/ gefunden
+                        </option>
+                      )}
+                      {visualPresets.map((name) => (
+                        <option key={name} value={name} style={{ backgroundColor: "#1a1622", color: "#f5eff7" }}>
+                          {name.replace(/\.(milk|json|preset)$/i, "")}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
+                </div>,
+                document.body
+              )
+            : null}
 
           {isLyricsOpen ? (
             <div className="absolute inset-0 z-20 grid place-items-center bg-[#07060bcc] p-4">
@@ -2439,6 +3174,10 @@ export function App() {
           ) : null}
         </div>
       )}
+
+      {importSession ? (
+        <ImportUploadFullscreen session={importSession} onClose={() => setImportSession(null)} />
+      ) : null}
     </AppShell>
   );
 }
