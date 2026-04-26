@@ -96,25 +96,66 @@ const app = new Elysia()
     const type = file.type || "audio/mpeg";
 
     if (range) {
-      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
-      if (!match) return new Response("invalid range", { status: 416 });
-      const start = match[1] ? Number(match[1]) : 0;
-      const end = match[2] ? Number(match[2]) : size - 1;
-      if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start < 0 || end >= size) {
-        return new Response("invalid range", { status: 416 });
-      }
-      const chunk = file.slice(start, end + 1);
-      return new Response(chunk, {
-        status: 206,
-        headers: {
-          "Content-Type": type,
-          "Content-Range": `bytes ${start}-${end}/${size}`,
-          "Content-Length": String(end - start + 1),
-          "Accept-Ranges": "bytes",
-          "Cache-Control": "public, max-age=31536000, immutable",
-          "Access-Control-Allow-Origin": "*"
+      // Handle browser range variations according to RFC 7233.
+      const firstRange = range.split(",")[0]?.trim() ?? "";
+      const match = /^bytes=(\d*)-(\d*)$/.exec(firstRange);
+      if (match) {
+        const rawStart = match[1];
+        const rawEnd = match[2];
+        let start = 0;
+        let end = size - 1;
+
+        if (rawStart && rawEnd) {
+          start = Number(rawStart);
+          end = Number(rawEnd);
+        } else if (rawStart && !rawEnd) {
+          start = Number(rawStart);
+          end = size - 1;
+        } else if (!rawStart && rawEnd) {
+          const suffixLen = Number(rawEnd);
+          if (!Number.isFinite(suffixLen) || suffixLen <= 0) {
+            return new Response("range not satisfiable", {
+              status: 416,
+              headers: {
+                "Content-Range": `bytes */${size}`,
+                "Accept-Ranges": "bytes",
+                "Access-Control-Allow-Origin": "*"
+              }
+            });
+          }
+          start = Math.max(0, size - suffixLen);
+          end = size - 1;
         }
-      });
+
+        if (!Number.isFinite(start) || start < 0) start = 0;
+        if (!Number.isFinite(end) || end < start) end = size - 1;
+        if (start >= size) {
+          return new Response("range not satisfiable", {
+            status: 416,
+            headers: {
+              "Content-Range": `bytes */${size}`,
+              "Accept-Ranges": "bytes",
+              "Access-Control-Allow-Origin": "*"
+            }
+          });
+        }
+        if (end >= size) end = size - 1;
+        const chunk = file.slice(start, end + 1);
+        const chunkBuffer = await chunk.arrayBuffer();
+        const chunkLength = end - start + 1;
+        return new Response(chunkBuffer, {
+          status: 206,
+          headers: {
+            "Content-Type": type,
+            "Content-Range": `bytes ${start}-${end}/${size}`,
+            "Content-Length": String(chunkLength),
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "Access-Control-Allow-Origin": "*"
+          }
+        });
+      }
+      // Unknown range format: fall back to full-body response instead of failing playback.
     }
 
     return new Response(file, {
@@ -470,18 +511,36 @@ const app = new Elysia()
     if (!track) return new Response("not found", { status: 404 });
     return normalizeTrack(track);
   })
-  .get("/users/:userId/playlists", ({ params }) =>
-    sql`SELECT * FROM playlists WHERE user_id = ${params.userId} ORDER BY updated_at DESC`
-  )
-  .get("/playlists/:playlistId/items", ({ params }) =>
-    sql`
+  .get("/users/:userId/playlists", async ({ params, request }) => {
+    const origin = request.headers.get("origin");
+    const rows = await sql`SELECT * FROM playlists WHERE user_id = ${params.userId} ORDER BY updated_at DESC`;
+    return new Response(JSON.stringify(rows), {
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Access-Control-Allow-Origin": origin ?? "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Range"
+      }
+    });
+  })
+  .get("/playlists/:playlistId/items", async ({ params, request }) => {
+    const origin = request.headers.get("origin");
+    const rows = await sql`
       SELECT t.*
       FROM playlist_items p
       JOIN tracks t ON p.track_id = t.id
       WHERE p.playlist_id = ${params.playlistId}
       ORDER BY p.item_order ASC
-    `
-  )
+    `;
+    return new Response(JSON.stringify(rows.map((row) => normalizeTrack(row as Record<string, unknown>))), {
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Access-Control-Allow-Origin": origin ?? "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Range"
+      }
+    });
+  })
   .ws("/events", {
     open(ws) {
       sockets.add(ws);

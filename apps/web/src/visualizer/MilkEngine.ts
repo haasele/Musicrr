@@ -28,6 +28,16 @@ export class MilkEngine {
   private audioNode: AudioNode | null = null;
   private animationFrame = 0;
   private allPresets: Record<string, unknown> = {};
+  private isRunning = false;
+  private lastFrameTime = 0;
+  private readonly targetFrameMs = 1000 / 55;
+
+  private getMeshSize(width: number, height: number): { meshWidth: number; meshHeight: number } {
+    const area = width * height;
+    if (area >= 1920 * 1080) return { meshWidth: 52, meshHeight: 39 };
+    if (area >= 1280 * 720) return { meshWidth: 60, meshHeight: 45 };
+    return { meshWidth: 64, meshHeight: 48 };
+  }
 
   async init(canvas: HTMLCanvasElement, audioContext: AudioContext, sourceNode: AudioNode): Promise<void> {
     const butterchurnModule = await import("butterchurn");
@@ -57,24 +67,32 @@ export class MilkEngine {
     this.visualizer = butterchurn.createVisualizer(audioContext, canvas, {
       width: Math.max(640, canvas.clientWidth || 640),
       height: Math.max(360, canvas.clientHeight || 360),
-      meshWidth: 64,
-      meshHeight: 48
+      meshWidth: 60,
+      meshHeight: 45
     }) as ButterchurnVisualizer;
 
     this.audioNode = sourceNode;
     this.visualizer.connectAudio(sourceNode);
     this.resize(canvas);
-    this.renderLoop();
+    this.start();
   }
 
   resize(canvas: HTMLCanvasElement): void {
     if (!this.visualizer) return;
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const width = Math.max(320, Math.floor((canvas.clientWidth || canvas.width) * dpr));
-    const height = Math.max(180, Math.floor((canvas.clientHeight || canvas.height) * dpr));
+    const dpr = Math.min(1.6, Math.max(1, window.devicePixelRatio || 1));
+    const rawWidth = Math.max(320, Math.floor((canvas.clientWidth || canvas.width) * dpr));
+    const rawHeight = Math.max(180, Math.floor((canvas.clientHeight || canvas.height) * dpr));
+
+    // Hard cap render resolution to avoid fullscreen GPU spikes on high-DPI displays.
+    const maxWidth = 2560;
+    const maxHeight = 1440;
+    const scale = Math.min(1, maxWidth / rawWidth, maxHeight / rawHeight);
+    const width = Math.max(320, Math.floor(rawWidth * scale));
+    const height = Math.max(180, Math.floor(rawHeight * scale));
+    const mesh = this.getMeshSize(width, height);
     canvas.width = width;
     canvas.height = height;
-    this.visualizer.setRendererSize(width, height, { meshWidth: 64, meshHeight: 48 });
+    this.visualizer.setRendererSize(width, height, mesh);
   }
 
   loadPresetByName(selectedName: string, milkContent?: string): boolean {
@@ -110,14 +128,29 @@ export class MilkEngine {
     return true;
   }
 
-  private renderLoop(): void {
-    if (!this.visualizer) return;
-    this.visualizer.render();
-    this.animationFrame = requestAnimationFrame(() => this.renderLoop());
+  start(): void {
+    if (this.isRunning || !this.visualizer) return;
+    this.isRunning = true;
+    this.lastFrameTime = 0;
+    this.animationFrame = requestAnimationFrame((ts) => this.renderLoop(ts));
+  }
+
+  stop(): void {
+    this.isRunning = false;
+    cancelAnimationFrame(this.animationFrame);
+  }
+
+  private renderLoop(timestamp: number): void {
+    if (!this.visualizer || !this.isRunning) return;
+    if (this.lastFrameTime === 0 || timestamp - this.lastFrameTime >= this.targetFrameMs) {
+      this.visualizer.render();
+      this.lastFrameTime = timestamp;
+    }
+    this.animationFrame = requestAnimationFrame((ts) => this.renderLoop(ts));
   }
 
   dispose(): void {
-    cancelAnimationFrame(this.animationFrame);
+    this.stop();
     if (this.visualizer && this.audioNode) this.visualizer.disconnectAudio(this.audioNode);
     this.visualizer = null;
     this.audioNode = null;

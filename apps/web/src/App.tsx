@@ -148,8 +148,11 @@ export function App() {
   const [newUserIsAdmin, setNewUserIsAdmin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
+  const [playbackDebug, setPlaybackDebug] = useState("");
   const [tracks, setTracks] = useState<Track[]>([]);
   const [tab, setTab] = useState<"tracks" | "artists" | "albums" | "playlists">("tracks");
+  const [selectedArtist, setSelectedArtist] = useState<string | null>(null);
+  const [selectedAlbum, setSelectedAlbum] = useState<string | null>(null);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [visualPresets, setVisualPresets] = useState<string[]>([]);
   const [preset, setPreset] = useState<string>("");
@@ -186,6 +189,11 @@ export function App() {
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const analyserRafRef = useRef<number | null>(null);
+  const playbackRetryCountRef = useRef(0);
+  const playbackRetryingRef = useRef(false);
+  const currentTrackMetaRef = useRef<{ id: string; title: string } | null>(null);
+  const streamBlobFallbackRef = useRef<Map<string, string>>(new Map());
+  const streamBlobFallbackTriedRef = useRef<Set<string>>(new Set());
   const energySmoothRef = useRef(0.18);
   const milkEngineRef = useRef<MilkEngine | null>(null);
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
@@ -217,6 +225,16 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      for (const url of streamBlobFallbackRef.current.values()) {
+        URL.revokeObjectURL(url);
+      }
+      streamBlobFallbackRef.current.clear();
+      streamBlobFallbackTriedRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
     fetch(apiUrl("/visual/presets"))
       .then((res) => res.json())
       .then((data: string[]) => {
@@ -241,17 +259,21 @@ export function App() {
   useEffect(() => {
     if (!userId) return;
     fetch(apiUrl(`/library/tracks/${userId}?limit=500`))
-      .then((res) => res.json())
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`tracks ${res.status}`))))
       .then((data: Track[]) => {
         const normalized = data.map((t) => ({ ...t, source: "server" as const }));
         setTracks(normalized);
         queue.load(normalized.map((t) => t.id));
       })
-      .catch(() => {});
+      .catch(() => {
+        setAuthMessage("Track-Liste konnte nicht geladen werden.");
+      });
     fetch(apiUrl(`/users/${userId}/playlists`))
-      .then((res) => res.json())
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`playlists ${res.status}`))))
       .then((data: { id: string; name: string }[]) => setPlaylists(data))
-      .catch(() => {});
+      .catch(() => {
+        setAuthMessage("Playlisten konnten nicht geladen werden.");
+      });
   }, [userId]);
 
   useEffect(() => {
@@ -302,16 +324,22 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!isPlayerExpanded || playerViewMode !== "visualizer") return;
+    if (!isPlayerExpanded || playerViewMode !== "visualizer") {
+      milkEngineRef.current?.stop();
+      return;
+    }
     if (!canvasRef.current || !audioContextRef.current || !sourceNodeRef.current) return;
     if (milkEngineRef.current) {
       milkEngineRef.current.resize(canvasRef.current);
+      milkEngineRef.current.start();
       return;
     }
+    let cancelled = false;
     milkEngineRef.current = new MilkEngine();
     milkEngineRef.current
       .init(canvasRef.current, audioContextRef.current, sourceNodeRef.current)
       .then(() => {
+        if (cancelled) return;
         if (preset) {
           fetch(apiUrl(`/visual/preset?name=${encodeURIComponent(preset)}`))
             .then((res) => res.json())
@@ -320,6 +348,9 @@ export function App() {
         }
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [isPlayerExpanded, playerViewMode, preset]);
 
   useEffect(() => {
@@ -329,18 +360,30 @@ export function App() {
   }, [playerViewMode, isBeatReactive]);
 
   const artists = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const track of tracks) map.set(track.artist, (map.get(track.artist) ?? 0) + 1);
-    return [...map.entries()];
+    const map = new Map<string, { name: string; coverTrackId: string | null }>();
+    for (const track of tracks) {
+      const current = map.get(track.artist);
+      if (!current) {
+        map.set(track.artist, { name: track.artist, coverTrackId: track.cover_path ? track.id : null });
+      } else if (!current.coverTrackId && track.cover_path) {
+        current.coverTrackId = track.id;
+      }
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [tracks]);
 
   const albums = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, { name: string; coverTrackId: string | null }>();
     for (const track of tracks) {
       if (!track.album) continue;
-      map.set(track.album, (map.get(track.album) ?? 0) + 1);
+      const current = map.get(track.album);
+      if (!current) {
+        map.set(track.album, { name: track.album, coverTrackId: track.cover_path ? track.id : null });
+      } else if (!current.coverTrackId && track.cover_path) {
+        current.coverTrackId = track.id;
+      }
     }
-    return [...map.entries()];
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [tracks]);
 
   const sortedTracks = useMemo(() => {
@@ -352,7 +395,29 @@ export function App() {
     });
     return list;
   }, [tracks, sortBy, sortDir]);
+  const artistTracks = useMemo(
+    () => (selectedArtist ? sortedTracks.filter((track) => track.artist === selectedArtist) : []),
+    [selectedArtist, sortedTracks]
+  );
+  const albumTracks = useMemo(
+    () => (selectedAlbum ? sortedTracks.filter((track) => track.album === selectedAlbum) : []),
+    [selectedAlbum, sortedTracks]
+  );
   const activeTrack = sortedTracks[currentTrackIndex];
+  function openArtistPage(artistName: string): void {
+    if (!artistName) return;
+    setSelectedArtist(artistName);
+    setSelectedAlbum(null);
+    setTab("artists");
+  }
+
+  function openAlbumPage(albumName: string): void {
+    if (!albumName) return;
+    setSelectedAlbum(albumName);
+    setSelectedArtist(null);
+    setTab("albums");
+  }
+
   const progressRatio = duration > 0 ? Math.max(0, Math.min(1, currentTime / duration)) : 0;
   const waveBars = useMemo(() => Array.from({ length: 56 }, (_, i) => i), []);
   const auroraOrbs = useMemo(
@@ -459,6 +524,14 @@ export function App() {
   }, [activeTrack?.id, activeTrack?.cover_path]);
 
   useEffect(() => {
+    const needsEnergyLoop = isPlayerExpanded && playerViewMode === "gradient" && isBeatReactive && isPlaying;
+    if (!needsEnergyLoop) {
+      if (analyserRafRef.current) {
+        cancelAnimationFrame(analyserRafRef.current);
+        analyserRafRef.current = null;
+      }
+      return;
+    }
     if (!audioContextRef.current || !sourceNodeRef.current) return;
     if (!analyserRef.current) {
       const analyser = audioContextRef.current.createAnalyser();
@@ -481,7 +554,8 @@ export function App() {
       const target = 0.14 + raw * 0.95;
       energySmoothRef.current += (target - energySmoothRef.current) * 0.08;
       frameCounter += 1;
-      if (frameCounter % 2 === 0) {
+      // Keep React updates sparse; this state drives only CSS energy effects.
+      if (frameCounter % 4 === 0) {
         setAudioEnergy(clamp(energySmoothRef.current, 0.08, 1));
       }
       analyserRafRef.current = requestAnimationFrame(tick);
@@ -493,7 +567,7 @@ export function App() {
         analyserRafRef.current = null;
       }
     };
-  }, [isPlaying, currentTrackIndex]);
+  }, [isPlayerExpanded, playerViewMode, isBeatReactive, isPlaying]);
 
   useEffect(() => {
     if (!isFullscreenMenuOpen) return;
@@ -838,9 +912,32 @@ export function App() {
   }
 
   function play(index: number) {
-    setCurrentTrackIndex(index);
     const track = sortedTracks[index];
     if (audioRef.current && track) {
+      currentTrackMetaRef.current = { id: track.id, title: track.title };
+      streamBlobFallbackTriedRef.current.delete(track.id);
+      const nextSrc = track.source === "local" && track.object_url
+        ? track.object_url
+        : streamBlobFallbackRef.current.get(track.id) ?? apiUrl(`/media/track/${track.id}/stream`);
+      const currentSrc = audioRef.current.currentSrc || audioRef.current.src || "";
+      if (currentSrc === nextSrc) {
+        audioContextRef.current?.resume().catch(() => {});
+        audioRef.current
+          .play()
+          .then(() => {
+          playbackRetryCountRef.current = 0;
+          playbackRetryingRef.current = false;
+            setCurrentTrackIndex(index);
+            setAuthMessage("");
+            setPlaybackDebug("");
+            setIsPlaying(true);
+          })
+          .catch(() => {
+            reportPlaybackIssue("play() failed while resuming same src", audioRef.current as HTMLAudioElement);
+          });
+        return;
+      }
+      setCurrentTrackIndex(index);
       if (!audioContextRef.current) {
         audioContextRef.current = new AudioContext();
       }
@@ -860,11 +957,14 @@ export function App() {
       audioRef.current
         .play()
         .then(() => {
+          playbackRetryCountRef.current = 0;
+          playbackRetryingRef.current = false;
           setAuthMessage("");
+          setPlaybackDebug("");
           setIsPlaying(true);
         })
         .catch(() => {
-          setAuthMessage("Playback fehlgeschlagen. Bitte Track erneut anklicken.");
+          reportPlaybackIssue("play() failed after source swap", audioRef.current as HTMLAudioElement);
         });
     }
   }
@@ -883,6 +983,25 @@ export function App() {
     if (!audioRef.current) return;
     audioRef.current.pause();
     setIsPlaying(false);
+  }
+
+  function resumePlayback() {
+    if (!audioRef.current) return;
+    if (!audioRef.current.src && !audioRef.current.currentSrc) {
+      play(currentTrackIndex);
+      return;
+    }
+    audioContextRef.current?.resume().catch(() => {});
+    audioRef.current
+      .play()
+      .then(() => {
+        setAuthMessage("");
+        setPlaybackDebug("");
+        setIsPlaying(true);
+      })
+      .catch(() => {
+        reportPlaybackIssue("resumePlayback() failed", audioRef.current as HTMLAudioElement);
+      });
   }
 
   function stop() {
@@ -914,6 +1033,80 @@ export function App() {
     return `${min}:${sec.toString().padStart(2, "0")}`;
   }
 
+  function mediaErrorLabel(code: number): string {
+    if (code === 1) return "MEDIA_ERR_ABORTED";
+    if (code === 2) return "MEDIA_ERR_NETWORK";
+    if (code === 3) return "MEDIA_ERR_DECODE";
+    if (code === 4) return "MEDIA_ERR_SRC_NOT_SUPPORTED";
+    return "UNKNOWN_MEDIA_ERROR";
+  }
+
+  function reportPlaybackIssue(reason: string, audio: HTMLAudioElement): void {
+    const mediaErr = audio.error;
+    const srcTrackIdMatch = /\/media\/track\/([^/]+)\//.exec(audio.currentSrc || audio.src || "");
+    const details = {
+      reason,
+      mediaErrorCode: mediaErr?.code ?? null,
+      mediaErrorLabel: mediaErr ? mediaErrorLabel(mediaErr.code) : null,
+      networkState: audio.networkState,
+      readyState: audio.readyState,
+      currentTime: Number((audio.currentTime || 0).toFixed(3)),
+      duration: Number((audio.duration || 0).toFixed(3)),
+      src: audio.currentSrc || audio.src || null,
+      trackId: activeTrack?.id ?? currentTrackMetaRef.current?.id ?? srcTrackIdMatch?.[1] ?? null,
+      trackTitle: activeTrack?.title ?? currentTrackMetaRef.current?.title ?? null
+    };
+    console.error("[musicrr:playback]", details);
+    setPlaybackDebug(JSON.stringify(details, null, 2));
+    const codeSuffix = details.mediaErrorLabel ? ` (${details.mediaErrorLabel})` : "";
+    setAuthMessage(`Playback fehlgeschlagen${codeSuffix}. Siehe Debug-Details.`);
+  }
+
+  async function attemptStreamBlobFallback(audio: HTMLAudioElement, resumeAt: number, trackId: string): Promise<void> {
+    if (playbackRetryingRef.current) return;
+    playbackRetryingRef.current = true;
+    try {
+      const response = await fetch(apiUrl(`/media/track/${trackId}/stream?blob_fallback=${Date.now()}`), {
+        cache: "no-store"
+      });
+      if (!response.ok) throw new Error(`blob fallback fetch failed (${response.status})`);
+      const blob = await response.blob();
+      if (!blob.size) throw new Error("blob fallback returned empty payload");
+
+      const previous = streamBlobFallbackRef.current.get(trackId);
+      if (previous) URL.revokeObjectURL(previous);
+      const objectUrl = URL.createObjectURL(blob);
+      streamBlobFallbackRef.current.set(trackId, objectUrl);
+
+      audio.src = objectUrl;
+      audio.load();
+      await new Promise<void>((resolve, reject) => {
+        const onCanPlay = () => {
+          audio.removeEventListener("canplay", onCanPlay);
+          audio.removeEventListener("error", onErr);
+          resolve();
+        };
+        const onErr = () => {
+          audio.removeEventListener("canplay", onCanPlay);
+          audio.removeEventListener("error", onErr);
+          reject(new Error("blob fallback canplay failed"));
+        };
+        audio.addEventListener("canplay", onCanPlay);
+        audio.addEventListener("error", onErr);
+      });
+
+      audio.currentTime = Math.max(0, Math.min((audio.duration || resumeAt + 1), resumeAt));
+      await audio.play();
+      setAuthMessage(`Stream-Decode-Problem erkannt, lokaler Fallback aktiv (${formatTime(audio.currentTime)}).`);
+      setPlaybackDebug("");
+      setIsPlaying(true);
+    } catch (error) {
+      reportPlaybackIssue(`blob fallback failed: ${error instanceof Error ? error.message : "unknown"}`, audio);
+    } finally {
+      playbackRetryingRef.current = false;
+    }
+  }
+
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -927,8 +1120,74 @@ export function App() {
       next();
     };
     const onError = () => {
+      if (playbackRetryingRef.current) return;
+      const currentErrorCode = audio.error?.code ?? 0;
+      const srcTrackIdMatch = /\/media\/track\/([^/]+)\//.exec(audio.currentSrc || audio.src || "");
+      const sourceTrackId = currentTrackMetaRef.current?.id ?? srcTrackIdMatch?.[1] ?? null;
+      if (currentErrorCode === 3 && playbackRetryCountRef.current < 2 && Number.isFinite(audio.duration) && audio.duration > 0) {
+        playbackRetryingRef.current = true;
+        playbackRetryCountRef.current += 1;
+        // Decode glitch recovery: skip a small window around the broken frame.
+        const resumeAt = Math.max(0, Math.min((audio.duration || 0) - 0.4, (audio.currentTime || 0) + 1.1));
+        const retrySrc = `${audio.currentSrc.split("?")[0]}?decode_retry=${Date.now()}`;
+        audio.src = retrySrc;
+        audio.load();
+        const handleCanPlay = () => {
+          audio.removeEventListener("canplay", handleCanPlay);
+          audio.currentTime = resumeAt;
+          audio
+            .play()
+            .then(() => {
+              playbackRetryingRef.current = false;
+              setAuthMessage(`Decode-Glitch erkannt, bei ${formatTime(resumeAt)} fortgesetzt.`);
+              setPlaybackDebug("");
+              setIsPlaying(true);
+            })
+            .catch(() => {
+              playbackRetryingRef.current = false;
+              setIsPlaying(false);
+              reportPlaybackIssue("decode recovery failed after skip-ahead", audio);
+            });
+        };
+        audio.addEventListener("canplay", handleCanPlay);
+        return;
+      }
+      if (currentErrorCode === 3 && sourceTrackId && !streamBlobFallbackTriedRef.current.has(sourceTrackId)) {
+        streamBlobFallbackTriedRef.current.add(sourceTrackId);
+        const resumeAt = Math.max(0, (audio.currentTime || 0) + 0.6);
+        void attemptStreamBlobFallback(audio, resumeAt, sourceTrackId);
+        return;
+      }
+      if (playbackRetryCountRef.current < 1 && audio.currentSrc && audio.currentSrc.includes("/media/track/")) {
+        playbackRetryingRef.current = true;
+        playbackRetryCountRef.current += 1;
+        const resumeAt = Math.max(0, audio.currentTime || 0);
+        const retrySrc = `${audio.currentSrc.split("?")[0]}?retry=${Date.now()}`;
+        audio.src = retrySrc;
+        audio.load();
+        const handleLoaded = () => {
+          audio.removeEventListener("loadedmetadata", handleLoaded);
+          audio.currentTime = Math.max(0, resumeAt - 0.2);
+          audio
+            .play()
+            .then(() => {
+              playbackRetryingRef.current = false;
+              setAuthMessage("");
+              setPlaybackDebug("");
+              setIsPlaying(true);
+            })
+            .catch(() => {
+              playbackRetryingRef.current = false;
+              setIsPlaying(false);
+              reportPlaybackIssue("retry play() failed after media error", audio);
+            });
+        };
+        audio.addEventListener("loadedmetadata", handleLoaded);
+        return;
+      }
+      playbackRetryingRef.current = false;
       setIsPlaying(false);
-      setAuthMessage("Audio konnte nicht geladen werden.");
+      reportPlaybackIssue("audio element emitted error event", audio);
     };
     audio.addEventListener("pause", onPause);
     audio.addEventListener("play", onPlay);
@@ -1027,6 +1286,11 @@ export function App() {
           </div>
           <div className="mt-4">{loading ? <NeonLoader /> : null}</div>
           {authMessage ? <div className="mt-3 rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-sm text-[#e6e0e9]">{authMessage}</div> : null}
+          {playbackDebug ? (
+            <pre className="mt-2 max-h-44 overflow-auto rounded-xl border border-[#4a4458] bg-[#16131d] px-3 py-2 text-[11px] text-[#d9d1e5]">
+              {playbackDebug}
+            </pre>
+          ) : null}
         </div>
       </AppShell>
     );
@@ -1047,9 +1311,9 @@ export function App() {
         ) : null
       }
     >
-      <div className="grid gap-5 pb-40">
-        <section className="rounded-[28px] border border-[#4a445866] bg-[#211f26cc] p-5 shadow-xl">
-          <div className="mb-4 flex flex-wrap gap-2">
+      <div className="grid gap-4 pb-44 md:gap-5 md:pb-40">
+        <section className="rounded-[24px] border border-[#4a445866] bg-[#211f26cc] p-3 shadow-xl sm:rounded-[28px] sm:p-5">
+          <div className="mb-4 flex flex-wrap justify-center gap-2">
             {tabs.map((value) => (
               <button
                 key={value}
@@ -1062,23 +1326,23 @@ export function App() {
               </button>
             ))}
           </div>
-          <div className="mb-4 flex items-center gap-2 overflow-x-auto pb-1">
+          <div className="mb-4 grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:overflow-x-visible sm:pb-1">
             <input
-              className="min-w-[220px] flex-1 rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 py-2 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff]"
+              className="col-span-3 w-full min-w-0 flex-1 rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 py-2 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff] sm:min-w-[220px]"
               value={query}
               onChange={(e) => searchTracks(e.target.value)}
               placeholder="Suche nach Track, Artist, Album"
             />
             <input
-              className="min-w-[180px] rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 py-2 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff]"
+              className="col-span-3 w-full min-w-0 rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 py-2 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff] sm:min-w-[180px] sm:w-auto"
               value={importTitle}
               onChange={(e) => setImportTitle(e.target.value)}
               placeholder="Import Titel (optional)"
             />
 
-            <div className="relative">
+            <div className="relative justify-self-center sm:justify-self-auto">
               <button
-                className={`panel-icon-btn ${isEditMode ? "panel-icon-btn-active" : ""}`}
+                className={`panel-icon-btn h-10 min-w-10 px-0 sm:h-auto sm:min-w-[40px] sm:px-[10px] ${isEditMode ? "panel-icon-btn-active" : ""}`}
                 title={isEditMode ? "Edit Mode beenden" : "Edit Mode"}
                 aria-label={isEditMode ? "Edit Mode beenden" : "Edit Mode"}
                 onClick={() => {
@@ -1097,7 +1361,7 @@ export function App() {
               </button>
             </div>
 
-            <button className="panel-icon-btn" title="Import" aria-label="Import" onClick={() => void openImportDialog()}>
+            <button className="panel-icon-btn h-10 min-w-10 justify-self-center px-0 sm:h-auto sm:min-w-[40px] sm:justify-self-auto sm:px-[10px]" title="Import" aria-label="Import" onClick={() => void openImportDialog()}>
               <IconBase>
                 <path d="M12 3v12" />
                 <path d="M8 11l4 4 4-4" />
@@ -1105,10 +1369,10 @@ export function App() {
               </IconBase>
             </button>
 
-            <div className="relative">
+            <div className="relative justify-self-center sm:justify-self-auto">
               <button
                 ref={filterMenuTriggerRef}
-                className="panel-icon-btn"
+                className="panel-icon-btn h-10 min-w-10 px-0 sm:h-auto sm:min-w-[40px] sm:px-[10px]"
                 title="Filter Optionen"
                 aria-label="Filter Optionen"
                 onClick={() => setIsFilterMenuOpen((v) => !v)}
@@ -1147,9 +1411,9 @@ export function App() {
           </div>
 
           {isEditMode ? (
-            <div className="mb-4 flex items-center gap-2 overflow-x-auto pb-1">
+            <div className="mb-4 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:overflow-x-visible sm:pb-1">
               <input
-                className="min-w-[180px] rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 py-2 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff]"
+                className="w-full min-w-0 rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 py-2 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff] sm:min-w-[180px] sm:w-auto"
                 value={playlistName}
                 onChange={(e) => setPlaylistName(e.target.value)}
                 placeholder="Playlist Name"
@@ -1214,11 +1478,11 @@ export function App() {
             onChange={(e) => importLocalFiles(e.target.files)}
           />
           {tab === "tracks" && (
-            <div className="space-y-2">
+            <div className="mx-auto w-full max-w-4xl space-y-2">
               {sortedTracks.map((track, idx) => (
                 <div
                   key={track.id}
-                  className={`flex items-center gap-3 rounded-2xl border px-3 py-2 transition ${
+                  className={`flex items-start gap-2 rounded-2xl border px-2 py-2 transition sm:items-center sm:gap-3 sm:px-3 ${
                     selectedTrackIds.includes(track.id) && isEditMode
                       ? "border-[#d0bcff] bg-[#3a314b]"
                       : "border-[#4a4458] bg-[#2b2930] hover:bg-[#36303e]"
@@ -1236,7 +1500,7 @@ export function App() {
                     </button>
                   ) : null}
                   <button
-                    className="flex flex-1 items-center justify-between text-left"
+                    className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left"
                     onClick={() => {
                       if (isEditMode) {
                         toggleTrackSelection(track.id);
@@ -1245,9 +1509,9 @@ export function App() {
                       play(idx);
                     }}
                   >
-                    <span className="flex items-center gap-2">
-                      <img
-                        src={track.cover_path ? apiUrl(`/media/track/${track.id}/cover`) : ""}
+                    <span className="flex min-w-0 items-center gap-2">
+                        <img
+                          src={track.cover_path ? apiUrl(`/media/track/${track.id}/cover`) : undefined}
                         alt=""
                         className="h-8 w-8 rounded-md border border-[#4a4458] bg-[#1f1b24] object-cover"
                         style={{ visibility: track.cover_path ? "visible" : "hidden" }}
@@ -1259,12 +1523,13 @@ export function App() {
                           onChange={(e) => setEditingTrackTitle(e.target.value)}
                         />
                       ) : (
-                        <>
-                          <span className="font-medium text-[#f5eff7]">{track.title}</span> - <span className="text-[#cac4d0]">{track.artist}</span>
-                        </>
+                        <span className="min-w-0 truncate text-sm text-[#f5eff7]">
+                          <span className="font-medium">{track.title}</span>
+                          <span className="text-[#cac4d0]"> - {track.artist}</span>
+                        </span>
                       )}
                     </span>
-                    <span className="text-xs text-[#938f99]">{track.duration_sec}s</span>
+                    <span className="shrink-0 text-[11px] text-[#938f99] sm:text-xs">{track.duration_sec}s</span>
                   </button>
                   {!isEditMode && editingTrackId === track.id ? (
                     <button
@@ -1290,7 +1555,7 @@ export function App() {
                       </button>
                       {openTrackMenuId === track.id ? (
                         <div
-                          className="absolute right-0 top-full z-30 mt-2 w-56 rounded-2xl border border-white/15 bg-[#1c1826e0] p-2 shadow-xl backdrop-blur-2xl"
+                          className="absolute right-0 top-full z-50 mt-2 w-56 rounded-2xl border border-white/15 bg-[#1c1826e0] p-2 shadow-xl backdrop-blur-2xl"
                           onPointerDown={(e) => e.stopPropagation()}
                         >
                           <button className="mb-1 w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-left text-xs text-[#f5eff7]" onClick={() => createPlaylistWithTrack(track)}>
@@ -1320,11 +1585,91 @@ export function App() {
             </div>
           )}
 
-          {tab === "artists" && artists.map(([artist, count]) => <div key={artist} className="rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2">{artist} ({count})</div>)}
-          {tab === "albums" && albums.map(([album, count]) => <div key={album} className="rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2">{album} ({count})</div>)}
+          {tab === "artists" && (
+            selectedArtist ? (
+              <div className="mx-auto w-full max-w-3xl space-y-2">
+                <div className="mb-1 flex items-center justify-between rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2">
+                  <span className="truncate text-sm font-semibold text-[#f5eff7]">{selectedArtist}</span>
+                  <button
+                    className="rounded-full border border-[#4a4458] bg-[#1f1b24] px-3 py-1 text-xs text-[#e6e0e9]"
+                    onClick={() => setSelectedArtist(null)}
+                  >
+                    Zur Liste
+                  </button>
+                </div>
+                {artistTracks.map((track, idx) => (
+                  <button
+                    key={track.id}
+                    className="flex w-full items-center justify-between rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-left hover:bg-[#36303e]"
+                    onClick={() => play(sortedTracks.findIndex((t) => t.id === track.id) >= 0 ? sortedTracks.findIndex((t) => t.id === track.id) : idx)}
+                  >
+                    <span className="min-w-0 truncate text-sm text-[#f5eff7]">{track.title}</span>
+                    <span className="shrink-0 text-xs text-[#938f99]">{track.duration_sec}s</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              artists.map((artist) => (
+                <button
+                  key={artist.name}
+                  className="mx-auto flex w-full max-w-3xl items-center gap-3 rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-left hover:bg-[#36303e]"
+                  onClick={() => openArtistPage(artist.name)}
+                >
+                  <img
+                    src={artist.coverTrackId ? apiUrl(`/media/track/${artist.coverTrackId}/cover`) : undefined}
+                    alt=""
+                    className="h-10 w-10 rounded-full border border-[#4a4458] bg-[#1f1b24] object-cover"
+                    style={{ visibility: artist.coverTrackId ? "visible" : "hidden" }}
+                  />
+                  <span className="truncate text-sm text-[#f5eff7]">{artist.name}</span>
+                </button>
+              ))
+            )
+          )}
+          {tab === "albums" && (
+            selectedAlbum ? (
+              <div className="mx-auto w-full max-w-3xl space-y-2">
+                <div className="mb-1 flex items-center justify-between rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2">
+                  <span className="truncate text-sm font-semibold text-[#f5eff7]">{selectedAlbum}</span>
+                  <button
+                    className="rounded-full border border-[#4a4458] bg-[#1f1b24] px-3 py-1 text-xs text-[#e6e0e9]"
+                    onClick={() => setSelectedAlbum(null)}
+                  >
+                    Zur Liste
+                  </button>
+                </div>
+                {albumTracks.map((track, idx) => (
+                  <button
+                    key={track.id}
+                    className="flex w-full items-center justify-between rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-left hover:bg-[#36303e]"
+                    onClick={() => play(sortedTracks.findIndex((t) => t.id === track.id) >= 0 ? sortedTracks.findIndex((t) => t.id === track.id) : idx)}
+                  >
+                    <span className="min-w-0 truncate text-sm text-[#f5eff7]">{track.title}</span>
+                    <span className="shrink-0 text-xs text-[#938f99]">{track.duration_sec}s</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              albums.map((album) => (
+                <button
+                  key={album.name}
+                  className="mx-auto flex w-full max-w-3xl items-center gap-3 rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-left hover:bg-[#36303e]"
+                  onClick={() => openAlbumPage(album.name)}
+                >
+                  <img
+                    src={album.coverTrackId ? apiUrl(`/media/track/${album.coverTrackId}/cover`) : undefined}
+                    alt=""
+                    className="h-10 w-10 rounded-lg border border-[#4a4458] bg-[#1f1b24] object-cover"
+                    style={{ visibility: album.coverTrackId ? "visible" : "hidden" }}
+                  />
+                  <span className="truncate text-sm text-[#f5eff7]">{album.name}</span>
+                </button>
+              ))
+            )
+          )}
           {tab === "playlists" && (
-            <div className="space-y-3">
-              <div className="flex gap-2">
+            <div className="mx-auto w-full max-w-3xl space-y-3">
+              <div className="grid grid-cols-1 gap-2 sm:flex">
                 <input
                   className="flex-1 rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 py-2 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff]"
                   value={playlistName}
@@ -1351,13 +1696,13 @@ export function App() {
         </section>
       </div>
 
-      <footer className="fixed inset-x-4 bottom-4 z-30 rounded-[24px] border border-white/15 bg-white/8 p-3 shadow-2xl backdrop-blur-2xl md:inset-x-6">
-        <div className="grid gap-2 md:grid-cols-[auto_1fr_auto] md:items-center">
+      <footer className="fixed inset-x-2 bottom-3 z-30 rounded-[20px] border border-white/15 bg-white/8 p-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl sm:inset-x-4 sm:bottom-5 sm:rounded-[24px] sm:p-3 md:inset-x-6">
+        <div className="grid gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-center">
           <button className="flex items-center gap-3 text-left" onClick={() => setIsPlayerExpanded(true)}>
             <img
-              src={activeTrack?.cover_path ? apiUrl(`/media/track/${activeTrack.id}/cover`) : ""}
+              src={activeTrack?.cover_path ? apiUrl(`/media/track/${activeTrack.id}/cover`) : undefined}
               alt=""
-              className={`h-14 w-14 rounded-2xl border border-[#4a4458] bg-gradient-to-br from-[#d0bcff] via-[#7d5260] to-[#4f378b] object-cover ${
+              className={`h-11 w-11 rounded-xl border border-[#4a4458] bg-gradient-to-br from-[#d0bcff] via-[#7d5260] to-[#4f378b] object-cover sm:h-14 sm:w-14 sm:rounded-2xl ${
                 isPlaying ? "animate-pulse" : ""
               }`}
               style={{ visibility: activeTrack?.cover_path ? "visible" : "hidden" }}
@@ -1368,14 +1713,14 @@ export function App() {
             </div>
           </button>
 
-          <div className="space-y-1">
+          <div className="space-y-1 md:min-w-0">
             <div
               role="slider"
               aria-label="Song progress"
               aria-valuemin={0}
               aria-valuemax={Math.floor(duration > 0 ? duration : (activeTrack?.duration_sec ?? 0))}
               aria-valuenow={Math.floor(currentTime)}
-                    className="relative h-11 w-full cursor-pointer select-none overflow-hidden rounded-2xl border border-[#4a4458] bg-[#1f1b24] px-2 py-1"
+                    className="relative h-10 w-full cursor-pointer select-none overflow-hidden rounded-2xl border border-[#4a4458] bg-[#1f1b24] px-2 py-1 sm:h-11"
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 const ratio = (e.clientX - rect.left) / rect.width;
@@ -1429,7 +1774,7 @@ export function App() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-2 md:justify-end">
             <IconButton title="Previous" onClick={previous}>
               <IconBase>
                 <path d="M6 6v12" />
@@ -1442,7 +1787,7 @@ export function App() {
                 <path d="M6 8h5a7 7 0 1 1-6.6 9.3" />
               </IconBase>
             </IconButton>
-            <IconButton title="Play/Pause" onClick={() => (isPlaying ? pause() : play(currentTrackIndex))} primary>
+            <IconButton title="Play/Pause" onClick={() => (isPlaying ? pause() : resumePlayback())} primary>
               {isPlaying ? (
                 <IconBase>
                   <path d="M8 6v12" />
@@ -1482,6 +1827,11 @@ export function App() {
         </div>
         <audio ref={audioRef} className="hidden" crossOrigin="anonymous" preload="auto" />
         {authMessage ? <div className="mt-2 text-xs text-[#ffb4ab]">{authMessage}</div> : null}
+        {playbackDebug ? (
+          <pre className="mt-2 max-h-36 overflow-auto rounded-xl border border-[#4a445866] bg-[#17141f] px-3 py-2 text-[10px] text-[#d7cfe3]">
+            {playbackDebug}
+          </pre>
+        ) : null}
       </footer>
 
       {isPlayerExpanded && (
@@ -1496,39 +1846,42 @@ export function App() {
             } as React.CSSProperties
           }
         >
-          <div className={`player-gradient-layer ${playerViewMode === "gradient" ? "player-layer-visible" : "player-layer-hidden"}`}>
-            <div className="player-gradient-blob player-gradient-blob-a" style={{ backgroundColor: accentA }} />
-            <div className="player-gradient-blob player-gradient-blob-b" style={{ backgroundColor: accentB }} />
-            <div className="player-gradient-blob player-gradient-blob-c" style={{ backgroundColor: accentC }} />
-            <div className={`gradient-visualizer-full ${isPlaying ? "gradient-visualizer-active" : ""}`}>
-              <div className="gradient-aurora gradient-aurora-a" />
-              <div className="gradient-aurora gradient-aurora-b" />
-              <div className="gradient-aurora gradient-aurora-c" />
-              {auroraOrbs.map((orb, idx) => (
-                <span
-                  key={orb.id}
-                  className="gradient-orb"
-                  style={
-                    {
-                      "--orb-left": orb.left,
-                      "--orb-top": orb.top,
-                      "--orb-size": orb.size,
-                      "--orb-duration": orb.duration,
-                      "--orb-delay": orb.delay,
-                      "--orb-color": idx % 3 === 0 ? accentA : idx % 3 === 1 ? accentB : accentC
-                    } as React.CSSProperties
-                  }
-                />
-              ))}
+          {playerViewMode === "gradient" ? (
+            <div className="player-gradient-layer player-layer-visible">
+              <div className="player-gradient-blob player-gradient-blob-a" style={{ backgroundColor: accentA }} />
+              <div className="player-gradient-blob player-gradient-blob-b" style={{ backgroundColor: accentB }} />
+              <div className="player-gradient-blob player-gradient-blob-c" style={{ backgroundColor: accentC }} />
+              <div className={`gradient-visualizer-full ${isPlaying ? "gradient-visualizer-active" : ""}`}>
+                <div className="gradient-aurora gradient-aurora-a" />
+                <div className="gradient-aurora gradient-aurora-b" />
+                <div className="gradient-aurora gradient-aurora-c" />
+                {auroraOrbs.map((orb, idx) => (
+                  <span
+                    key={orb.id}
+                    className="gradient-orb"
+                    style={
+                      {
+                        "--orb-left": orb.left,
+                        "--orb-top": orb.top,
+                        "--orb-size": orb.size,
+                        "--orb-duration": orb.duration,
+                        "--orb-delay": orb.delay,
+                        "--orb-color": idx % 3 === 0 ? accentA : idx % 3 === 1 ? accentB : accentC
+                      } as React.CSSProperties
+                    }
+                  />
+                ))}
+              </div>
             </div>
-          </div>
-          <div className={`player-visual-layer ${playerViewMode === "visualizer" ? "player-layer-visible" : "player-layer-hidden"}`}>
-            <canvas ref={canvasRef} className="h-full w-full" />
-          </div>
+          ) : (
+            <div className="player-visual-layer player-layer-visible">
+              <canvas ref={canvasRef} className="h-full w-full" />
+            </div>
+          )}
           <div className={`player-overlay-layer absolute inset-0 ${playerViewMode === "visualizer" ? "bg-[#09070b55]" : "bg-[#0d0a1270]"}`} />
 
           <button
-            className="player-btn absolute right-4 top-4 z-30 px-3 md:right-6 md:top-6"
+            className="player-btn absolute right-4 top-4 z-30 px-3 sm:right-5 sm:top-5 md:right-6 md:top-6"
             aria-label="Vollbildplayer schliessen"
             onClick={() => {
               setIsPlayerExpanded(false);
@@ -1542,27 +1895,38 @@ export function App() {
             </IconBase>
           </button>
 
-          <div className="relative z-10 mx-auto grid h-full max-w-6xl gap-8 p-4 md:grid-cols-[minmax(260px,360px)_1fr] md:items-center md:p-8">
-            <section className="rounded-[28px] border border-white/15 bg-white/5 p-4 backdrop-blur-2xl">
+          <div className="relative z-10 mx-auto grid h-full max-w-6xl gap-4 overflow-y-auto px-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-[72px] min-[560px]:grid-cols-[minmax(160px,240px)_1fr] min-[560px]:items-center min-[560px]:gap-4 min-[560px]:overflow-hidden min-[560px]:px-3 min-[560px]:pb-3 min-[560px]:pt-[80px] md:gap-5 md:px-4 md:pb-4 md:pt-[88px] lg:grid-cols-[minmax(220px,320px)_1fr] lg:gap-8 lg:p-8">
+            <section className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/15 bg-white/5 p-3 backdrop-blur-2xl min-[560px]:rounded-[24px] min-[560px]:p-3 md:rounded-[28px] md:p-3.5 lg:p-4">
               <img
-                src={activeTrack?.cover_path ? apiUrl(`/media/track/${activeTrack.id}/cover`) : ""}
+                src={activeTrack?.cover_path ? apiUrl(`/media/track/${activeTrack.id}/cover`) : undefined}
                 alt=""
-                className="w-full rounded-3xl border border-[#8f7ec555] bg-gradient-to-br from-[#d0bcff] via-[#7d5260] to-[#4f378b] object-cover shadow-2xl md:h-[360px]"
+                className="mx-auto aspect-square w-full max-w-full max-h-[calc(100%-5.75rem)] rounded-[20px] border border-[#8f7ec555] bg-gradient-to-br from-[#d0bcff] via-[#7d5260] to-[#4f378b] object-cover shadow-2xl"
                 style={{ visibility: activeTrack?.cover_path ? "visible" : "hidden" }}
               />
-              <div className="mt-4 text-xl font-semibold text-[#f5eff7]">{activeTrack?.title ?? "Nichts abgespielt"}</div>
-              <div className="text-sm text-[#d1c9dc]">{activeTrack?.artist ?? "Kein Artist"}</div>
+              <div className="mt-3 flex min-h-[4.75rem] min-w-0 flex-1 flex-col justify-center overflow-hidden px-1">
+                <div className="truncate text-center text-xl font-semibold text-[#f5eff7]">{activeTrack?.title ?? "Nichts abgespielt"}</div>
+                <button
+                  className="mx-auto mt-0.5 block max-w-full truncate px-1 text-center text-sm text-[#d1c9dc] underline-offset-2 hover:underline"
+                  onClick={() => {
+                    if (activeTrack?.artist) openArtistPage(activeTrack.artist);
+                    setIsPlayerExpanded(false);
+                  }}
+                >
+                  {activeTrack?.artist ?? "Kein Artist"}
+                </button>
+              </div>
             </section>
 
-            <section className="relative flex flex-col justify-center gap-4 rounded-[28px] border border-white/15 bg-white/5 p-5 backdrop-blur-2xl">
-              <div className="space-y-2">
+            <section className="relative -translate-y-1 flex min-h-0 flex-col rounded-[24px] border border-white/15 bg-white/5 p-3 backdrop-blur-2xl min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
+              <div className="flex h-full min-h-0 flex-col gap-2.5 md:gap-3">
+              <div className="space-y-1.5 min-[560px]:space-y-2">
                 <div
                   role="slider"
                   aria-label="Song progress expanded"
                   aria-valuemin={0}
                   aria-valuemax={Math.floor(duration > 0 ? duration : (activeTrack?.duration_sec ?? 0))}
                   aria-valuenow={Math.floor(currentTime)}
-                  className="glass-progress relative h-14 w-full cursor-pointer select-none overflow-hidden rounded-2xl border border-white/15 bg-white/5 px-2 py-1 backdrop-blur-2xl"
+                  className="glass-progress relative h-[clamp(2.75rem,8vh,4.75rem)] w-full cursor-pointer select-none overflow-hidden rounded-2xl border border-white/15 bg-white/5 px-2 py-1 backdrop-blur-2xl sm:h-[clamp(3rem,7vh,4.75rem)]"
                   onClick={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     const ratio = (e.clientX - rect.left) / rect.width;
@@ -1595,14 +1959,14 @@ export function App() {
                 </div>
               </div>
 
-              <div className="relative flex flex-wrap items-center justify-center gap-2">
+              <div className="relative flex flex-wrap items-center justify-center gap-1.5 min-[560px]:gap-2">
                 <IconButton title="Previous" onClick={previous}>
                   <IconBase>
                     <path d="M6 6v12" />
                     <path d="M9 12l9 6V6z" />
                   </IconBase>
                 </IconButton>
-                <IconButton title="Play/Pause" onClick={() => (isPlaying ? pause() : play(currentTrackIndex))} primary>
+                <IconButton title="Play/Pause" onClick={() => (isPlaying ? pause() : resumePlayback())} primary>
                   {isPlaying ? (
                     <IconBase>
                       <path d="M8 6v12" />
@@ -1637,7 +2001,7 @@ export function App() {
                 {isFullscreenMenuOpen ? (
                   <div
                     ref={moreMenuRef}
-                    className="fullscreen-more-menu absolute left-1/2 top-full z-20 mt-2 w-fit min-w-[142px] -translate-x-1/2 overflow-hidden rounded-2xl p-2"
+                    className="fullscreen-more-menu absolute bottom-full left-1/2 z-40 mb-2 w-fit min-w-[142px] -translate-x-1/2 overflow-hidden rounded-2xl p-2 sm:bottom-auto sm:top-full sm:mb-0 sm:mt-2"
                   >
                     <span
                       aria-hidden
@@ -1703,7 +2067,7 @@ export function App() {
                       <select
                         value={preset}
                         onChange={(e) => setPreset(e.target.value)}
-                        className="w-full min-w-0 max-w-full appearance-none rounded-xl border border-white/20 bg-white/10 px-2.5 py-1.5 pr-8 text-xs text-[#e6e0e9] backdrop-blur-xl"
+                        className="fullscreen-preset-select w-full min-w-0 max-w-full appearance-none rounded-xl border border-white/20 bg-white/10 px-2.5 py-1.5 pr-8 text-xs text-[#e6e0e9] backdrop-blur-xl"
                         style={{ colorScheme: "dark" }}
                       >
                         {visualPresets.length === 0 && (
@@ -1720,6 +2084,7 @@ export function App() {
                     ) : null}
                   </div>
                 ) : null}
+              </div>
               </div>
             </section>
           </div>

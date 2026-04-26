@@ -138,7 +138,8 @@ button {
 
 .fullscreen-more-menu {
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: linear-gradient(
+  background: rgba(22, 19, 31, 0.86);
+  background-image: linear-gradient(
       145deg,
       color-mix(in srgb, var(--accent-a, #d0bcff) 16%, rgba(18, 16, 24, 0.52)) 0%,
       color-mix(in srgb, var(--accent-b, #7d5260) 12%, rgba(18, 16, 24, 0.48)) 48%,
@@ -152,7 +153,7 @@ button {
 
 .fullscreen-more-btn {
   border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(28, 24, 38, 0.74);
   backdrop-filter: blur(16px) saturate(1.04);
   -webkit-backdrop-filter: blur(16px) saturate(1.04);
 }
@@ -195,6 +196,28 @@ button {
 .fullscreen-more-menu > div {
   position: relative;
   z-index: 1;
+}
+
+.fullscreen-preset-select {
+  background-color: rgba(28, 24, 38, 0.78);
+  color: #e6e0e9;
+}
+
+.fullscreen-preset-select option {
+  background-color: #1a1622;
+  color: #f5eff7;
+}
+
+@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  .fullscreen-more-menu {
+    background-color: rgba(20, 16, 29, 0.94);
+    background-image: none;
+  }
+
+  .fullscreen-more-btn,
+  .fullscreen-preset-select {
+    background-color: rgba(33, 27, 45, 0.92);
+  }
 }
 
 .wave-animate {
@@ -417,5 +440,27 @@ button {
   }
   100% {
     transform: translate(-50%, -50%) translate3d(5.5%, -3.8%, 0) scale(0.94);
+  }
+}
+
+@media (max-width: 768px) {
+  .player-gradient-blob {
+    filter: blur(72px);
+    opacity: 0.48;
+  }
+
+  .gradient-aurora {
+    filter: blur(30px);
+    opacity: 0.42;
+    mix-blend-mode: normal;
+  }
+
+  .gradient-orb {
+    display: none;
+  }
+
+  .fullscreen-more-menu {
+    backdrop-filter: blur(16px) saturate(1.08);
+    -webkit-backdrop-filter: blur(16px) saturate(1.08);
   }
 }
