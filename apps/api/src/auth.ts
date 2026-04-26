@@ -23,6 +23,25 @@ export function getCorsOriginsFromEnv(): Set<string> {
   return new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
 }
 
+/**
+ * Value for @elysiajs/cors `origin`.
+ * Browsers send `Origin: <what you type in the address bar for the web app>` — that string must
+ * be listed in CORS_ORIGINS (scheme + host + port, no path). Example: http://45.83.105.35:3000
+ */
+export function buildCorsOriginOption(): true | false | string[] {
+  if (process.env.CORS_ALLOW_ALL === "1" || process.env.CORS_ALLOW_ALL === "true") {
+    return true;
+  }
+  const fromEnv = Array.from(getCorsOriginsFromEnv());
+  if (fromEnv.length > 0) {
+    return fromEnv;
+  }
+  if (process.env.NODE_ENV === "production") {
+    return false;
+  }
+  return ["http://localhost:3000", "http://127.0.0.1:3000"];
+}
+
 function clientKey(request: Request): string {
   const xff = request.headers.get("x-forwarded-for");
   if (xff) return xff.split(",")[0]?.trim() || "forwarded";

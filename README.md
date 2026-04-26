@@ -46,9 +46,11 @@ Die API erwartet für geschützte Routen eine Session (`Authorization: Bearer <s
 Für ein öffentliches Setup:
 
 - **TLS** vor der API und dem Web (Reverse-Proxy / Load-Balancer).
-- **`CORS_ORIGINS`** auf die exakte Origin deines Web-Frontends setzen (kein `*`).
+- **`CORS_ORIGINS`** auf die exakte Origin deines Web-Frontends setzen (kein `*`). Muss exakt dem entsprechen, was im Browser in der **Adresszeile** steht, z. B. `http://DEINE_IP:3000` wenn die Web-UI auf Port 3000 läuft (nicht die API-URL auf :3001). Mehrere Einträge komma-separiert.
 - **Admin- und DB-Passwörter** nicht auf Beispielwerte lassen.
 - Optional: API und Web nur intern und nur der Proxy nach außen.
+
+**„API nicht erreichbar“ / CORS im Browser:** Wenn die Web-Seite `http://IP:3000` ist und die API `http://IP:3001`, trägst du in der API-Env z. B. `CORS_ORIGINS=http://IP:3000` ein, API neu starten. Wenn `NODE_ENV=production` und `CORS_ORIGINS` leer ist, blockt die API Cross-Origin-Requests. Nur zum Debuggen: `CORS_ALLOW_ALL=1` (unsicher, nicht dauerhaft).
 
 ## Admin Login
 

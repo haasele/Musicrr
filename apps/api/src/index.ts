@@ -8,7 +8,7 @@ import { encryptJson } from "@music/crypto";
 import { importFolderRecursive } from "@music/importer";
 import { parseBuffer } from "music-metadata";
 import {
-  getCorsOriginsFromEnv,
+  buildCorsOriginOption,
   readBearerSession,
   recordLoginFailure,
   requireSession,
@@ -82,17 +82,19 @@ async function resolveStoredMediaPath(storedPath: string): Promise<string | null
 await initPersistence();
 await cache.connect().catch(() => {});
 
-const corsOrigins = getCorsOriginsFromEnv();
+const corsMode = buildCorsOriginOption();
+if (corsMode === false) {
+  console.warn(
+    "[musicrr:api] CORS is disabled (no CORS_ORIGINS in production). Browser logins from another origin will fail. Set CORS_ORIGINS to your web UI origin, e.g. http://45.83.105.35:3000 or use CORS_ALLOW_ALL=1 only for debugging."
+  );
+} else if (corsMode === true) {
+  console.warn("[musicrr:api] CORS_ALLOW_ALL is on — not recommended for production.");
+}
 
 const app = new Elysia()
   .use(
     cors({
-      origin: (() => {
-        const fromEnv = Array.from(corsOrigins);
-        if (fromEnv.length > 0) return fromEnv;
-        if (process.env.NODE_ENV === "production") return false;
-        return ["http://localhost:3000", "http://127.0.0.1:3000"];
-      })(),
+      origin: corsMode,
       methods: ["GET", "POST", "OPTIONS", "PUT", "DELETE"],
       allowedHeaders: ["Content-Type", "Authorization", "X-Session-Id", "Range"]
     })
