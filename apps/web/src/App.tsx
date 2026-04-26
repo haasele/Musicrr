@@ -126,6 +126,29 @@ function colorToRgbString(color: { r: number; g: number; b: number }): string {
   return `rgb(${Math.round(color.r)}, ${Math.round(color.g)}, ${Math.round(color.b)})`;
 }
 
+function parseCssColorToRgb(input: string): { r: number; g: number; b: number } | null {
+  const value = input.trim();
+  const rgbMatch = /^rgb\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)$/i.exec(value);
+  if (rgbMatch) {
+    return {
+      r: clamp(Number(rgbMatch[1]), 0, 255),
+      g: clamp(Number(rgbMatch[2]), 0, 255),
+      b: clamp(Number(rgbMatch[3]), 0, 255)
+    };
+  }
+  const hexMatch = /^#([0-9a-f]{6}|[0-9a-f]{3})$/i.exec(value);
+  if (hexMatch) {
+    const raw = hexMatch[1];
+    const full = raw.length === 3 ? raw.split("").map((c) => `${c}${c}`).join("") : raw;
+    return {
+      r: Number.parseInt(full.slice(0, 2), 16),
+      g: Number.parseInt(full.slice(2, 4), 16),
+      b: Number.parseInt(full.slice(4, 6), 16)
+    };
+  }
+  return null;
+}
+
 /** File System Access (show*Picker) and crypto.randomUUID need a secure context; plain http:// on a LAN IP is not. */
 function isBrowserInSecureContext(): boolean {
   if (typeof globalThis.isSecureContext === "boolean") return globalThis.isSecureContext;
@@ -606,6 +629,9 @@ export function App() {
   const [accentA, setAccentA] = useState("#d0bcff");
   const [accentB, setAccentB] = useState("#7d5260");
   const [accentC, setAccentC] = useState("#4f378b");
+  const [themeAccentA, setThemeAccentA] = useState("#d0bcff");
+  const [themeAccentB, setThemeAccentB] = useState("#7d5260");
+  const [themeAccentC, setThemeAccentC] = useState("#4f378b");
   const [audioEnergy, setAudioEnergy] = useState(0.18);
   const [isAnonymousShareMode, setIsAnonymousShareMode] = useState(false);
   const [shareAccessToken, setShareAccessToken] = useState<string | null>(null);
@@ -625,6 +651,7 @@ export function App() {
   const currentTrackMetaRef = useRef<{ id: string; title: string } | null>(null);
   const streamBlobFallbackRef = useRef<Map<string, string>>(new Map());
   const streamBlobFallbackTriedRef = useRef<Set<string>>(new Set());
+  const themeAccentRafRef = useRef<number | null>(null);
   const energySmoothRef = useRef(0.18);
   const milkEngineRef = useRef<MilkEngine | null>(null);
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
@@ -842,6 +869,42 @@ export function App() {
   }, [importSession?.phase]);
 
   useEffect(() => {
+    const fromA = parseCssColorToRgb(themeAccentA) ?? { r: 208, g: 188, b: 255 };
+    const fromB = parseCssColorToRgb(themeAccentB) ?? { r: 125, g: 82, b: 96 };
+    const fromC = parseCssColorToRgb(themeAccentC) ?? { r: 79, g: 55, b: 139 };
+    const toA = parseCssColorToRgb(accentA) ?? fromA;
+    const toB = parseCssColorToRgb(accentB) ?? fromB;
+    const toC = parseCssColorToRgb(accentC) ?? fromC;
+    if (themeAccentRafRef.current) {
+      cancelAnimationFrame(themeAccentRafRef.current);
+      themeAccentRafRef.current = null;
+    }
+    const durationMs = 380;
+    const t0 = performance.now();
+    const ease = (x: number) => 1 - Math.pow(1 - x, 3);
+    const tick = (now: number) => {
+      const ratio = clamp((now - t0) / durationMs, 0, 1);
+      const e = ease(ratio);
+      const lerp = (a: number, b: number) => a + (b - a) * e;
+      setThemeAccentA(colorToRgbString({ r: lerp(fromA.r, toA.r), g: lerp(fromA.g, toA.g), b: lerp(fromA.b, toA.b) }));
+      setThemeAccentB(colorToRgbString({ r: lerp(fromB.r, toB.r), g: lerp(fromB.g, toB.g), b: lerp(fromB.b, toB.b) }));
+      setThemeAccentC(colorToRgbString({ r: lerp(fromC.r, toC.r), g: lerp(fromC.g, toC.g), b: lerp(fromC.b, toC.b) }));
+      if (ratio < 1) {
+        themeAccentRafRef.current = requestAnimationFrame(tick);
+      } else {
+        themeAccentRafRef.current = null;
+      }
+    };
+    themeAccentRafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (themeAccentRafRef.current) {
+        cancelAnimationFrame(themeAccentRafRef.current);
+        themeAccentRafRef.current = null;
+      }
+    };
+  }, [accentA, accentB, accentC]);
+
+  useEffect(() => {
     const text = authMessage.trim();
     if (!text) return;
     setTopToast({ id: Date.now(), text });
@@ -997,11 +1060,11 @@ useEffect(() => {
   const homeThemeVars = useMemo(
     () =>
       ({
-        "--home-accent-a": accentA,
-        "--home-accent-b": accentB,
-        "--home-accent-c": accentC
+        "--home-accent-a": themeAccentA,
+        "--home-accent-b": themeAccentB,
+        "--home-accent-c": themeAccentC
       }) as React.CSSProperties,
-    [accentA, accentB, accentC]
+    [themeAccentA, themeAccentB, themeAccentC]
   );
 
   const activeTrack = sortedTracks[currentTrackIndex];
@@ -2230,22 +2293,7 @@ useEffect(() => {
   return (
     <AppShell
       title="Musicrr"
-      headerLeft={
-        libraryBackVisible ? (
-          <button
-            type="button"
-            className="panel-icon-btn -ml-0.5 h-10 min-w-10 px-0 sm:h-9 sm:min-w-9"
-            title={libraryBackLabel}
-            aria-label={libraryBackLabel}
-            onClick={onLibraryBack}
-          >
-            <IconBase>
-              <path d="M19 12H5" />
-              <path d="M12 19l-7-7 7-7" />
-            </IconBase>
-          </button>
-        ) : null
-      }
+      hideHeader={isPlayerExpanded}
       headerRight={
         !isAnonymousShareMode ? (
           <button className="panel-icon-btn" title="Logout" aria-label="Logout" onClick={logout}>
@@ -2273,24 +2321,8 @@ useEffect(() => {
           </div>
         </div>
       ) : null}
-      <div
-        className="grid gap-4 pb-44 md:gap-5 md:pb-40"
-        style={
-          {
-            ...homeThemeVars,
-            background:
-              "radial-gradient(120% 140% at 8% -15%, color-mix(in srgb, var(--home-accent-a) 22%, transparent), transparent 58%), radial-gradient(130% 130% at 92% -10%, color-mix(in srgb, var(--home-accent-b) 20%, transparent), transparent 56%)"
-          } as React.CSSProperties
-        }
-      >
-        <section
-          className="rounded-[24px] border border-[#4a445866] p-3 shadow-xl sm:rounded-[28px] sm:p-5"
-          style={{
-            borderColor: "color-mix(in srgb, var(--home-accent-a) 18%, #4a445866)",
-            background:
-              "linear-gradient(160deg, color-mix(in srgb, var(--home-accent-a) 13%, #211f26cc) 0%, color-mix(in srgb, var(--home-accent-b) 11%, #211f26cc) 46%, color-mix(in srgb, var(--home-accent-c) 14%, #211f26cc) 100%)"
-          }}
-        >
+      <div className="home-theme-root grid gap-4 pb-44 md:gap-5 md:pb-40" style={homeThemeVars}>
+        <section className="home-theme-panel rounded-[24px] border border-[#4a445866] p-3 shadow-xl sm:rounded-[28px] sm:p-5">
           <div className="mb-4 flex flex-wrap justify-center gap-2">
             {tabs.map((value) => (
               <button
@@ -2876,14 +2908,7 @@ useEffect(() => {
         </section>
       </div>
 
-      <footer
-        className="fixed inset-x-2 bottom-3 z-30 rounded-[20px] border border-white/15 p-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl sm:inset-x-4 sm:bottom-5 sm:rounded-[24px] sm:p-3 md:inset-x-6"
-        style={{
-          borderColor: `color-mix(in srgb, ${accentA} 24%, rgba(255,255,255,0.16))`,
-          background:
-            `linear-gradient(155deg, color-mix(in srgb, ${accentA} 22%, rgba(255,255,255,0.08)) 0%, color-mix(in srgb, ${accentB} 16%, rgba(255,255,255,0.08)) 48%, color-mix(in srgb, ${accentC} 20%, rgba(255,255,255,0.08)) 100%)`
-        }}
-      >
+      <footer className="home-theme-footer fixed inset-x-2 bottom-3 z-30 rounded-[20px] border border-white/15 p-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl sm:inset-x-4 sm:bottom-5 sm:rounded-[24px] sm:p-3 md:inset-x-6">
         <div className="grid gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-center">
           <button
             type="button"
@@ -3026,7 +3051,7 @@ useEffect(() => {
 
       {isPlayerExpanded && (
         <div
-          className="player-morph-shell fixed inset-0 z-40 overflow-hidden bg-[#0d0a12]"
+          className="player-morph-shell fixed inset-0 z-[180] overflow-hidden bg-[#0d0a12]"
           style={
             {
               "--accent-a": accentA,
