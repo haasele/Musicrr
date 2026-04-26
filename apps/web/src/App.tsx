@@ -181,6 +181,10 @@ export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const importMenuRef = useRef<HTMLDivElement | null>(null);
+  const importMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [isImportMenuOpen, setIsImportMenuOpen] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -605,6 +609,23 @@ export function App() {
   }, [isFilterMenuOpen]);
 
   useEffect(() => {
+    if (!isImportMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (
+        importMenuRef.current?.contains(target) ||
+        importMenuTriggerRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setIsImportMenuOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => window.removeEventListener("pointerdown", onPointerDown);
+  }, [isImportMenuOpen]);
+
+  useEffect(() => {
     if (!openTrackMenuId) return;
     const onPointerDown = () => setOpenTrackMenuId(null);
     window.addEventListener("pointerdown", onPointerDown);
@@ -662,11 +683,32 @@ export function App() {
     localStorage.removeItem("isAdmin");
   }
 
+  const audioExt = new Set([
+    ".mp3",
+    ".wav",
+    ".flac",
+    ".ogg",
+    ".m4a",
+    ".aac",
+    ".opus",
+    ".wma",
+    ".webm"
+  ]);
+
+  function isLikelyAudioFile(file: File): boolean {
+    if (file.type && file.type.startsWith("audio/")) return true;
+    const n = file.name.toLowerCase();
+    const d = n.lastIndexOf(".");
+    if (d < 0) return false;
+    return audioExt.has(n.slice(d));
+  }
+
   function openFilePicker() {
     fileInputRef.current?.click();
   }
 
-  async function openImportDialog() {
+  async function importFromFiles() {
+    setIsImportMenuOpen(false);
     try {
       if ("showOpenFilePicker" in window) {
         const picker = (window as unknown as {
@@ -682,24 +724,29 @@ export function App() {
           types: [
             {
               description: "Audio",
-              accept: { "audio/*": [".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac"] }
+              accept: { "audio/*": [".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".opus"] }
             }
           ]
         });
         const files = await Promise.all(handles.map((h) => h.getFile()));
         if (files.length > 0) {
-          await importLocalFiles(files as unknown as FileList);
+          await importLocalFiles(files);
           return;
         }
       }
     } catch {
-      // no-op: fall through to folder/file fallback.
+      // Abgebrochen: Fallback-Dateidialog
     }
+    openFilePicker();
+  }
+
+  async function importFromFolder() {
+    setIsImportMenuOpen(false);
     if ("showDirectoryPicker" in window) {
       await pickDirectoryWithFsApi();
       return;
     }
-    openFilePicker();
+    folderInputRef.current?.click();
   }
 
   async function uploadAndPersistFiles(fileList: FileList | File[]) {
@@ -724,31 +771,39 @@ export function App() {
   }
 
   async function pickDirectoryWithFsApi() {
+    type DirWithValues = FileSystemDirectoryHandle & {
+      values: () => AsyncIterableIterator<FileSystemFileHandle | FileSystemDirectoryHandle>;
+    };
     try {
       const picker = (window as unknown as { showDirectoryPicker: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
       const handle = await picker();
       const collected: File[] = [];
       const walk = async (dir: FileSystemDirectoryHandle) => {
-        for await (const entry of dir.values()) {
+        for await (const entry of (dir as DirWithValues).values()) {
           if (entry.kind === "directory") {
             await walk(entry);
           } else if (entry.kind === "file") {
             const file = await entry.getFile();
-            if (file.type.startsWith("audio/")) collected.push(file);
+            if (isLikelyAudioFile(file)) collected.push(file);
           }
         }
       };
       await walk(handle);
+      if (collected.length === 0) {
+        setImportProgress("keine Audiodateien im Ordner");
+        return;
+      }
       await uploadAndPersistFiles(collected);
     } catch {
       setImportProgress("folder picker cancelled");
     }
   }
 
-  async function importLocalFiles(files: FileList | null) {
+  async function importLocalFiles(files: FileList | File[] | null) {
     if (!files || files.length === 0) return;
+    const fileArr = Array.isArray(files) ? files : Array.from(files);
     const imported: Track[] = [];
-    Array.from(files).forEach((file, idx) => {
+    fileArr.forEach((file, idx) => {
       const name = file.name.replace(/\.[^/.]+$/, "");
       imported.push({
         id: `local-${Date.now()}-${idx}-${crypto.randomUUID()}`,
@@ -766,7 +821,7 @@ export function App() {
       queue.load(nextTracks.map((t) => t.id));
       return nextTracks;
     });
-    await uploadAndPersistFiles(files);
+    await uploadAndPersistFiles(fileArr);
   }
 
   async function searchTracks(term: string) {
@@ -1293,24 +1348,37 @@ export function App() {
           <p className="mb-2 text-xs uppercase tracking-[0.16em] text-[#ccc2dc]">Material 3 Expressive</p>
           <h1 className="text-3xl font-semibold text-[#f5eff7]">Login</h1>
           <p className="mt-2 text-sm text-[#cac4d0]">Melde dich mit Email und Passwort an. User werden vom Admin erstellt.</p>
-          <input
-            className="mt-6 w-full rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 py-3 text-[#e6e0e9] outline-none ring-0 placeholder:text-[#938f99] focus:border-[#d0bcff]"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
-          />
-          <input
-            className="mt-3 w-full rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 py-3 text-[#e6e0e9] outline-none ring-0 placeholder:text-[#938f99] focus:border-[#d0bcff]"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Passwort"
-          />
-          <div className="mt-4 flex flex-wrap gap-3">
-            <button className="rounded-full border border-[#4a4458] bg-[#332d41] px-5 py-2 text-sm font-semibold text-[#e8def8] transition hover:bg-[#3c3650]" onClick={login}>
-              Einloggen
-            </button>
-          </div>
+          <form
+            className="mt-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void login();
+            }}
+          >
+            <input
+              className="w-full rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 py-3 text-[#e6e0e9] outline-none ring-0 placeholder:text-[#938f99] focus:border-[#d0bcff]"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email"
+              autoComplete="email"
+            />
+            <input
+              className="mt-3 w-full rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 py-3 text-[#e6e0e9] outline-none ring-0 placeholder:text-[#938f99] focus:border-[#d0bcff]"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Passwort"
+              autoComplete="current-password"
+            />
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="submit"
+                className="rounded-full border border-[#4a4458] bg-[#332d41] px-5 py-2 text-sm font-semibold text-[#e8def8] transition hover:bg-[#3c3650]"
+              >
+                Einloggen
+              </button>
+            </div>
+          </form>
           <div className="mt-4">{loading ? <NeonLoader /> : null}</div>
           {authMessage ? <div className="mt-3 rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-sm text-[#e6e0e9]">{authMessage}</div> : null}
           {playbackDebug ? (
@@ -1388,13 +1456,44 @@ export function App() {
               </button>
             </div>
 
-            <button className="panel-icon-btn h-10 min-w-10 justify-self-center px-0 sm:h-auto sm:min-w-[40px] sm:justify-self-auto sm:px-[10px]" title="Import" aria-label="Import" onClick={() => void openImportDialog()}>
-              <IconBase>
-                <path d="M12 3v12" />
-                <path d="M8 11l4 4 4-4" />
-                <path d="M4 19h16" />
-              </IconBase>
-            </button>
+            <div className="relative justify-self-center sm:justify-self-auto">
+              <button
+                ref={importMenuTriggerRef}
+                type="button"
+                className="panel-icon-btn h-10 min-w-10 px-0 sm:h-auto sm:min-w-[40px] sm:px-[10px]"
+                title="Import"
+                aria-label="Import"
+                aria-expanded={isImportMenuOpen}
+                onClick={() => setIsImportMenuOpen((v) => !v)}
+              >
+                <IconBase>
+                  <path d="M12 3v12" />
+                  <path d="M8 11l4 4 4-4" />
+                  <path d="M4 19h16" />
+                </IconBase>
+              </button>
+              {isImportMenuOpen ? (
+                <div
+                  ref={importMenuRef}
+                  className="absolute left-0 top-full z-20 mt-2 w-56 rounded-2xl border border-white/15 bg-[#1c1826e0] p-2 shadow-xl backdrop-blur-2xl"
+                >
+                  <button
+                    type="button"
+                    className="mb-1 w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-left text-sm text-[#e6e0e9] hover:bg-white/15"
+                    onClick={() => void importFromFiles()}
+                  >
+                    Dateien wählen…
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-left text-sm text-[#e6e0e9] hover:bg-white/15"
+                    onClick={() => void importFromFolder()}
+                  >
+                    Ordner (rekursiv)…
+                  </button>
+                </div>
+              ) : null}
+            </div>
 
             <div className="relative justify-self-center sm:justify-self-auto">
               <button
@@ -1502,7 +1601,29 @@ export function App() {
             accept="audio/*"
             multiple
             className="hidden"
-            onChange={(e) => importLocalFiles(e.target.files)}
+            onChange={(e) => {
+              void importLocalFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          <input
+            ref={folderInputRef}
+            type="file"
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- non-standard: directory picker in Chromium
+            {...({ webkitdirectory: true } as any)}
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const list = e.target.files;
+              e.target.value = "";
+              if (!list || list.length === 0) return;
+              const audio = Array.from(list).filter((f) => isLikelyAudioFile(f));
+              if (audio.length === 0) {
+                setImportProgress("keine Audiodateien im Ordner");
+                return;
+              }
+              void importLocalFiles(audio);
+            }}
           />
           {tab === "tracks" && (
             <div className="mx-auto w-full max-w-4xl space-y-2">
