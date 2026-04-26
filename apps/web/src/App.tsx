@@ -133,6 +133,32 @@ function isBrowserInSecureContext(): boolean {
 }
 
 /** randomUUID is missing in some browsers or without a secure context; never throw from import flow. */
+function CoverArtSlot({
+  className,
+  hasCover,
+  coverUrl,
+  label
+}: {
+  className: string;
+  hasCover: boolean;
+  coverUrl: string;
+  label: string;
+}) {
+  const initial = (label || "?").trim().charAt(0).toUpperCase() || "♪";
+  return (
+    <div
+      className={`relative shrink-0 overflow-hidden bg-gradient-to-br from-[#3b3550] via-[#2a2435] to-[#1a1620] text-[#b8a8c8] ${className}`}
+    >
+      {hasCover ? <img src={coverUrl} alt="" className="absolute inset-0 h-full w-full object-cover" /> : null}
+      {!hasCover ? (
+        <div className="absolute inset-0 flex items-center justify-center text-xs font-bold tabular-nums" title={label}>
+          {initial}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function newRandomId(): string {
   const c: Crypto | undefined = globalThis.crypto;
   if (c && typeof c.randomUUID === "function") {
@@ -661,7 +687,7 @@ export function App() {
     if (!sessionId) return;
     const el = folderInputRef.current;
     if (!el) return;
-    el.setAttribute("webkitdirectory", "");
+    el.setAttribute("webkitdirectory", "true");
   }, [sessionId]);
 
   async function login() {
@@ -1642,8 +1668,6 @@ export function App() {
           <input
             ref={folderInputRef}
             type="file"
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- non-standard: directory picker in Chromium
-            {...({ webkitdirectory: true } as any)}
             multiple
             className="hidden"
             onChange={(e) => {
@@ -1691,11 +1715,11 @@ export function App() {
                     }}
                   >
                     <span className="flex min-w-0 items-center gap-2">
-                        <img
-                          src={track.cover_path ? murl(`/media/track/${track.id}/cover`) : undefined}
-                        alt=""
-                        className="h-8 w-8 rounded-md border border-[#4a4458] bg-[#1f1b24] object-cover"
-                        style={{ visibility: track.cover_path ? "visible" : "hidden" }}
+                      <CoverArtSlot
+                        className="h-8 w-8 rounded-md border border-[#4a4458]"
+                        hasCover={Boolean(track.cover_path)}
+                        coverUrl={murl(`/media/track/${track.id}/cover`)}
+                        label={track.title}
                       />
                       {editingTrackId === track.id ? (
                         <input
@@ -1796,11 +1820,11 @@ export function App() {
                   className="mx-auto flex w-full max-w-3xl items-center gap-3 rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-left hover:bg-[#36303e]"
                   onClick={() => openArtistPage(artist.name)}
                 >
-                  <img
-                    src={artist.coverTrackId ? murl(`/media/track/${artist.coverTrackId}/cover`) : undefined}
-                    alt=""
-                    className="h-10 w-10 rounded-full border border-[#4a4458] bg-[#1f1b24] object-cover"
-                    style={{ visibility: artist.coverTrackId ? "visible" : "hidden" }}
+                  <CoverArtSlot
+                    className="h-10 w-10 rounded-full border border-[#4a4458]"
+                    hasCover={Boolean(artist.coverTrackId)}
+                    coverUrl={artist.coverTrackId ? murl(`/media/track/${artist.coverTrackId}/cover`) : ""}
+                    label={artist.name}
                   />
                   <span className="truncate text-sm text-[#f5eff7]">{artist.name}</span>
                 </button>
@@ -1837,11 +1861,11 @@ export function App() {
                   className="mx-auto flex w-full max-w-3xl items-center gap-3 rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-left hover:bg-[#36303e]"
                   onClick={() => openAlbumPage(album.name)}
                 >
-                  <img
-                    src={album.coverTrackId ? murl(`/media/track/${album.coverTrackId}/cover`) : undefined}
-                    alt=""
-                    className="h-10 w-10 rounded-lg border border-[#4a4458] bg-[#1f1b24] object-cover"
-                    style={{ visibility: album.coverTrackId ? "visible" : "hidden" }}
+                  <CoverArtSlot
+                    className="h-10 w-10 rounded-lg border border-[#4a4458]"
+                    hasCover={Boolean(album.coverTrackId)}
+                    coverUrl={album.coverTrackId ? murl(`/media/track/${album.coverTrackId}/cover`) : ""}
+                    label={album.name}
                   />
                   <span className="truncate text-sm text-[#f5eff7]">{album.name}</span>
                 </button>
@@ -1880,14 +1904,14 @@ export function App() {
       <footer className="fixed inset-x-2 bottom-3 z-30 rounded-[20px] border border-white/15 bg-white/8 p-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl sm:inset-x-4 sm:bottom-5 sm:rounded-[24px] sm:p-3 md:inset-x-6">
         <div className="grid gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-center">
           <button className="flex items-center gap-3 text-left" onClick={() => setIsPlayerExpanded(true)}>
-            <img
-              src={activeTrack?.cover_path ? murl(`/media/track/${activeTrack.id}/cover`) : undefined}
-              alt=""
-              className={`h-11 w-11 rounded-xl border border-[#4a4458] bg-gradient-to-br from-[#d0bcff] via-[#7d5260] to-[#4f378b] object-cover sm:h-14 sm:w-14 sm:rounded-2xl ${
-                isPlaying ? "animate-pulse" : ""
-              }`}
-              style={{ visibility: activeTrack?.cover_path ? "visible" : "hidden" }}
-            />
+            {activeTrack ? (
+              <CoverArtSlot
+                className={`h-11 w-11 rounded-xl border border-[#4a4458] sm:h-14 sm:w-14 sm:rounded-2xl ${isPlaying ? "animate-pulse" : ""}`}
+                hasCover={Boolean(activeTrack.cover_path)}
+                coverUrl={murl(`/media/track/${activeTrack.id}/cover`)}
+                label={activeTrack.title}
+              />
+            ) : null}
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold text-[#f5eff7]">{activeTrack?.title ?? "Nichts abgespielt"}</div>
               <div className="truncate text-xs text-[#cac4d0]">{activeTrack?.artist ?? "Kein Artist"}</div>
@@ -2078,12 +2102,14 @@ export function App() {
 
           <div className="relative z-10 mx-auto grid h-full max-w-6xl gap-4 overflow-y-auto px-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-[72px] min-[560px]:grid-cols-[minmax(160px,240px)_1fr] min-[560px]:items-center min-[560px]:gap-4 min-[560px]:overflow-hidden min-[560px]:px-3 min-[560px]:pb-3 min-[560px]:pt-[80px] md:gap-5 md:px-4 md:pb-4 md:pt-[88px] lg:grid-cols-[minmax(220px,320px)_1fr] lg:gap-8 lg:p-8">
             <section className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/15 bg-white/5 p-3 backdrop-blur-2xl min-[560px]:rounded-[24px] min-[560px]:p-3 md:rounded-[28px] md:p-3.5 lg:p-4">
-              <img
-                src={activeTrack?.cover_path ? murl(`/media/track/${activeTrack.id}/cover`) : undefined}
-                alt=""
-                className="mx-auto aspect-square w-full max-w-full max-h-[calc(100%-5.75rem)] rounded-[20px] border border-[#8f7ec555] bg-gradient-to-br from-[#d0bcff] via-[#7d5260] to-[#4f378b] object-cover shadow-2xl"
-                style={{ visibility: activeTrack?.cover_path ? "visible" : "hidden" }}
-              />
+              {activeTrack ? (
+                <CoverArtSlot
+                  className="mx-auto aspect-square w-full max-w-full max-h-[calc(100%-5.75rem)] rounded-[20px] border border-[#8f7ec555] shadow-2xl"
+                  hasCover={Boolean(activeTrack.cover_path)}
+                  coverUrl={murl(`/media/track/${activeTrack.id}/cover`)}
+                  label={activeTrack.title}
+                />
+              ) : null}
               <div className="mt-3 flex min-h-[4.75rem] min-w-0 flex-1 flex-col justify-center overflow-hidden px-1">
                 <div className="truncate text-center text-xl font-semibold text-[#f5eff7]">{activeTrack?.title ?? "Nichts abgespielt"}</div>
                 <button

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createPlaylist, reorderPlaylistItems } from "@music/core";
 import { encryptJson } from "@music/crypto";
 import { importFolderRecursive } from "@music/importer";
-import { parseBuffer } from "music-metadata";
+import { parseBuffer, selectCover, type IAudioMetadata } from "music-metadata";
 import {
   buildCorsOriginOption,
   normalizeCorsOriginEntry,
@@ -63,6 +63,27 @@ function normalizeTrack(row: Record<string, unknown>) {
     ...row,
     is_favorite: Boolean(row.is_favorite)
   };
+}
+
+function coverExtForMimeFormat(format: string): string {
+  const f = format.toLowerCase();
+  if (f.includes("png")) return ".png";
+  if (f.includes("webp")) return ".webp";
+  if (f.includes("avif")) return ".avif";
+  if (f.includes("gif")) return ".gif";
+  if (f.includes("bmp") || f.includes("bitmap")) return ".bmp";
+  return ".jpg";
+}
+
+function extensionForParse(fileName: string, mime: string | undefined): string {
+  if (fileName.includes(".")) {
+    return fileName.slice(fileName.lastIndexOf(".") + 1).toLowerCase() || "mp3";
+  }
+  if (mime?.includes("mpeg")) return "mp3";
+  if (mime?.includes("mp4") || mime?.includes("m4a")) return "m4a";
+  if (mime?.includes("flac")) return "flac";
+  if (mime?.includes("ogg")) return "ogg";
+  return "mp3";
 }
 
 async function resolveStoredMediaPath(storedPath: string): Promise<string | null> {
@@ -233,7 +254,17 @@ const app = new Elysia()
     const resolvedPath = await resolveStoredMediaPath(String(track.cover_path));
     if (!resolvedPath) return new Response("not found", { status: 404 });
     const file = Bun.file(resolvedPath);
-    return new Response(file);
+    const ext = String(resolvedPath)
+      .toLowerCase()
+      .match(/\.([a-z0-9]+)\s*$/i)?.[1];
+    const contentType =
+      ext === "png" ? "image/png"
+        : ext === "webp" ? "image/webp"
+        : ext === "avif" ? "image/avif"
+        : ext === "gif" ? "image/gif"
+        : ext === "bmp" ? "image/bmp"
+        : "image/jpeg";
+    return new Response(file, { headers: { "Content-Type": contentType, "Cache-Control": "public, max-age=31536000" } });
   })
   .get("/visual/presets", async () => {
     const presets = await collectPresetFiles(visualPresetsRoot).catch(() => []);
@@ -481,14 +512,24 @@ const app = new Elysia()
       const storedPath = join(uploadDir, `${hash}${ext}`);
       await writeFile(storedPath, bytes);
 
-      const metadata = await parseBuffer(Buffer.from(bytes), ext.replace(".", ""));
+      const extForParser = extensionForParse(String(file.name), file.type);
+      const fileInfo = { mimeType: file.type || undefined, path: file.name, size: bytes.length };
+      const titleFallback = file.name.replace(/\.[^/.]+$/, "");
+      const parseFailedFallback = {
+        common: { track: { no: null, of: null }, disk: { no: null, of: null }, title: titleFallback },
+        format: { duration: undefined as number | undefined }
+      } as IAudioMetadata;
+      const metadata: IAudioMetadata =
+        (await parseBuffer(bytes, fileInfo, { duration: true }).catch(() =>
+          parseBuffer(bytes, extForParser, { duration: true }).catch(() => null)
+        )) ?? parseFailedFallback;
+
       let coverPath: string | null = null;
-      const picture = metadata.common.picture?.[0];
-      if (picture?.data) {
-        const mime = picture.format.toLowerCase();
-        const coverExt = mime.includes("png") ? ".png" : ".jpg";
+      const coverPic = selectCover(metadata.common.picture);
+      if (coverPic?.data && coverPic.data.length > 0) {
+        const coverExt = coverExtForMimeFormat(String(coverPic.format ?? ""));
         coverPath = join(coverDir, `${hash}${coverExt}`);
-        await writeFile(coverPath, picture.data);
+        await writeFile(coverPath, coverPic.data);
       }
 
       const lyricsText = Array.isArray(metadata.common.lyrics) && metadata.common.lyrics.length > 0
@@ -509,7 +550,16 @@ const app = new Elysia()
         VALUES (${id}, ${userId}, ${metadata.common.artist ?? "Unknown Artist"}, ${metadata.common.album ?? null},
           ${trackTitle}, ${storedPath}, ${coverPath}, ${lyricsText}, ${hash},
           ${Math.floor(metadata.format.duration ?? 0)}, ${Date.now()}, ${sql.json(metadataPayload)})
-        ON CONFLICT (hash) DO NOTHING
+        ON CONFLICT (hash) DO UPDATE SET
+          file_path = EXCLUDED.file_path,
+          cover_path = COALESCE(EXCLUDED.cover_path, tracks.cover_path),
+          artist = EXCLUDED.artist,
+          album = EXCLUDED.album,
+          title = EXCLUDED.title,
+          lyrics = EXCLUDED.lyrics,
+          duration_sec = EXCLUDED.duration_sec,
+          metadata_json = EXCLUDED.metadata_json
+        WHERE tracks.user_id = ${userId}
         RETURNING id
       `;
       if (inserted[0]) {
