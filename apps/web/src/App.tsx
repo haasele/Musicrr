@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell, NeonLoader } from "@music/ui";
 import { PlayerQueue } from "@music/core";
+import { apiFetch, apiUrl, getApiWsBase, mediaUrl } from "./apiConfig";
 import { MilkEngine } from "./visualizer/MilkEngine";
 
 type Track = {
@@ -19,12 +20,6 @@ type Track = {
 };
 
 const queue = new PlayerQueue();
-const API_HTTP_BASE = `${window.location.protocol}//${window.location.hostname}:3001`;
-const API_WS_BASE = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.hostname}:3001`;
-
-function apiUrl(path: string): string {
-  return `${API_HTTP_BASE}${path}`;
-}
 
 function IconButton({
   title,
@@ -182,6 +177,7 @@ export function App() {
   const [accentC, setAccentC] = useState("#4f378b");
   const [audioEnergy, setAudioEnergy] = useState(0.18);
   const [isAnonymousShareMode, setIsAnonymousShareMode] = useState(false);
+  const [shareAccessToken, setShareAccessToken] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -202,10 +198,16 @@ export function App() {
   const filterMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const tabs = ["tracks", "artists", "albums", "playlists"] as const;
 
+  const murl = useCallback(
+    (path: string) => mediaUrl(path, sessionId, isAnonymousShareMode ? shareAccessToken : null),
+    [sessionId, shareAccessToken, isAnonymousShareMode]
+  );
+
   useEffect(() => {
     const match = /^\/share\/([^/]+)$/.exec(window.location.pathname);
     if (!match) return;
     const token = match[1];
+    setShareAccessToken(token);
     setIsAnonymousShareMode(true);
     fetch(apiUrl(`/share/${encodeURIComponent(token)}`))
       .then((res) => (res.ok ? res.json() : null))
@@ -257,8 +259,8 @@ export function App() {
   }, [preset]);
 
   useEffect(() => {
-    if (!userId) return;
-    fetch(apiUrl(`/library/tracks/${userId}?limit=500`))
+    if (!userId || !sessionId) return;
+    apiFetch(`/library/tracks/${userId}?limit=500`, { sessionId })
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`tracks ${res.status}`))))
       .then((data: Track[]) => {
         const normalized = data.map((t) => ({ ...t, source: "server" as const }));
@@ -268,13 +270,13 @@ export function App() {
       .catch(() => {
         setAuthMessage("Track-Liste konnte nicht geladen werden.");
       });
-    fetch(apiUrl(`/users/${userId}/playlists`))
+    apiFetch(`/users/${userId}/playlists`, { sessionId })
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`playlists ${res.status}`))))
       .then((data: { id: string; name: string }[]) => setPlaylists(data))
       .catch(() => {
         setAuthMessage("Playlisten konnten nicht geladen werden.");
       });
-  }, [userId]);
+  }, [userId, sessionId]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -298,7 +300,11 @@ export function App() {
   }, [sessionId]);
 
   useEffect(() => {
-    const ws = new WebSocket(`${API_WS_BASE}/events`);
+    if (!sessionId) return;
+    const ws = new WebSocket(`${getApiWsBase()}/events`);
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: "client.auth", sessionId }));
+    };
     ws.onmessage = (event) => {
       const message = JSON.parse(event.data);
       if (message.type === "import.progress") {
@@ -309,7 +315,7 @@ export function App() {
       }
     };
     return () => ws.close();
-  }, []);
+  }, [sessionId]);
 
   useEffect(() => {
     const onResize = () => {
@@ -442,7 +448,7 @@ export function App() {
     }
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.src = apiUrl(`/media/track/${activeTrack.id}/cover`);
+    img.src = murl(`/media/track/${activeTrack.id}/cover`);
     img.onload = () => {
       const swatch = document.createElement("canvas");
       swatch.width = 32;
@@ -521,7 +527,7 @@ export function App() {
       setAccentB(colorToRgbString(second));
       setAccentC(colorToRgbString(third));
     };
-  }, [activeTrack?.id, activeTrack?.cover_path]);
+  }, [activeTrack?.id, activeTrack?.cover_path, murl]);
 
   useEffect(() => {
     const needsEnergyLoop = isPlayerExpanded && playerViewMode === "gradient" && isBeatReactive && isPlaying;
@@ -639,11 +645,14 @@ export function App() {
   }
 
   async function logout() {
-    await fetch(apiUrl("/auth/logout"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId })
-    });
+    if (sessionId) {
+      await apiFetch("/auth/logout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+        sessionId
+      });
+    }
     setSessionId("");
     setUserId("");
     setIsAdmin(false);
@@ -694,20 +703,20 @@ export function App() {
   }
 
   async function uploadAndPersistFiles(fileList: FileList | File[]) {
-    if (!userId) return;
+    if (!userId || !sessionId) return;
     const files = Array.isArray(fileList) ? fileList : Array.from(fileList);
     if (files.length === 0) return;
     setImportProgress("uploading");
     const form = new FormData();
     form.append("userId", userId);
     for (const file of files) form.append("files", file);
-    const response = await fetch(apiUrl("/library/import-upload"), { method: "POST", body: form });
+    const response = await apiFetch("/library/import-upload", { method: "POST", body: form, sessionId });
     if (!response.ok) {
       setImportProgress("upload failed");
       return;
     }
     const result = await response.json() as { imported: number };
-    const data = await fetch(apiUrl(`/library/tracks/${userId}?limit=500`)).then((res) => res.json());
+    const data = await apiFetch(`/library/tracks/${userId}?limit=500`, { sessionId }).then((res) => res.json());
     const normalized = (data as Track[]).map((t) => ({ ...t, source: "server" as const }));
     setTracks(normalized);
     queue.load(normalized.map((t) => t.id));
@@ -762,44 +771,49 @@ export function App() {
 
   async function searchTracks(term: string) {
     setQuery(term);
-    if (!term.trim() || !userId) {
-      const data = await fetch(apiUrl(`/library/tracks/${userId}?limit=500`)).then((res) => res.json());
+    if (!userId || !sessionId) return;
+    if (!term.trim()) {
+      const data = await apiFetch(`/library/tracks/${userId}?limit=500`, { sessionId }).then((res) => res.json());
       setTracks(data);
       return;
     }
-    const data = await fetch(apiUrl(`/library/search/${userId}?q=${encodeURIComponent(term)}`)).then((res) => res.json());
+    const data = await apiFetch(`/library/search/${userId}?q=${encodeURIComponent(term)}`, { sessionId }).then((res) =>
+      res.json()
+    );
     setTracks(data);
   }
 
   async function createPlaylistFromSelection() {
-    if (!playlistName || !selectedTrackIds.length || !userId) return;
-    await fetch(apiUrl("/playlist/create"), {
+    if (!playlistName || !selectedTrackIds.length || !userId || !sessionId) return;
+    await apiFetch("/playlist/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, name: playlistName, trackIds: selectedTrackIds })
+      body: JSON.stringify({ userId, name: playlistName, trackIds: selectedTrackIds }),
+      sessionId
     });
     setPlaylistName("");
     setSelectedTrackIds([]);
-    const data = await fetch(apiUrl(`/users/${userId}/playlists`)).then((res) => res.json());
+    const data = await apiFetch(`/users/${userId}/playlists`, { sessionId }).then((res) => res.json());
     setPlaylists(data);
   }
 
   async function createPlaylistWithTrack(track: Track) {
-    if (!userId) return;
+    if (!userId || !sessionId) return;
     const name = window.prompt("Playlist Name");
     if (!name?.trim()) return;
-    await fetch(apiUrl("/playlist/create"), {
+    await apiFetch("/playlist/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, name: name.trim(), trackIds: [track.id] })
+      body: JSON.stringify({ userId, name: name.trim(), trackIds: [track.id] }),
+      sessionId
     });
-    const data = await fetch(apiUrl(`/users/${userId}/playlists`)).then((res) => res.json());
+    const data = await apiFetch(`/users/${userId}/playlists`, { sessionId }).then((res) => res.json());
     setPlaylists(data);
     setOpenTrackMenuId(null);
   }
 
   async function addTrackToPlaylist(track: Track) {
-    if (!userId) return;
+    if (!userId || !sessionId) return;
     if (!playlists.length) {
       setAuthMessage("Keine Playlists vorhanden.");
       return;
@@ -809,31 +823,34 @@ export function App() {
     const numeric = Number(selection);
     const chosen = Number.isFinite(numeric) ? playlists[numeric - 1] : playlists.find((p) => p.name.toLowerCase() === selection?.toLowerCase());
     if (!chosen) return;
-    await fetch(apiUrl(`/playlists/${chosen.id}/add-track`), {
+    await apiFetch(`/playlists/${chosen.id}/add-track`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ trackId: track.id })
+      body: JSON.stringify({ trackId: track.id }),
+      sessionId
     });
     setOpenTrackMenuId(null);
   }
 
   async function removeTrack(track: Track) {
-    if (!userId) return;
-    await fetch(apiUrl("/library/track/delete"), {
+    if (!userId || !sessionId) return;
+    await apiFetch("/library/track/delete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, trackId: track.id })
+      body: JSON.stringify({ userId, trackId: track.id }),
+      sessionId
     });
     setTracks((prev) => prev.filter((t) => t.id !== track.id));
     setOpenTrackMenuId(null);
   }
 
   async function shareTrack(track: Track) {
-    if (!userId) return;
-    const response = await fetch(apiUrl("/library/track/share"), {
+    if (!userId || !sessionId) return;
+    const response = await apiFetch("/library/track/share", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, trackId: track.id })
+      body: JSON.stringify({ userId, trackId: track.id }),
+      sessionId
     });
     const data = await response.json() as { token?: string };
     if (data.token) {
@@ -859,11 +876,12 @@ export function App() {
   }
 
   async function toggleFavorite(track: Track) {
-    if (!userId) return;
-    const response = await fetch(apiUrl("/library/track/favorite-toggle"), {
+    if (!userId || !sessionId) return;
+    const response = await apiFetch("/library/track/favorite-toggle", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, trackId: track.id })
+      body: JSON.stringify({ userId, trackId: track.id }),
+      sessionId
     });
     const data = await response.json() as { isFavorite: boolean };
     setTracks((prev) => prev.map((t) => (t.id === track.id ? { ...t, is_favorite: data.isFavorite } : t)));
@@ -872,7 +890,7 @@ export function App() {
 
   async function createUserAsAdmin() {
     if (!sessionId || !newUserEmail.trim() || !newUserPassword.trim()) return;
-    const res = await fetch(apiUrl("/admin/users/create"), {
+    const res = await apiFetch("/admin/users/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -881,7 +899,8 @@ export function App() {
         password: newUserPassword,
         displayName: newUserName.trim() || undefined,
         isAdmin: newUserIsAdmin
-      })
+      }),
+      sessionId
     });
     if (!res.ok) {
       setAuthMessage("User konnte nicht erstellt werden.");
@@ -896,7 +915,8 @@ export function App() {
 
   async function persistEncryptedSettings() {
     if (!password || !userId) return;
-    await fetch(apiUrl("/secure/blob"), {
+    if (!sessionId) return;
+    await apiFetch("/secure/blob", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -907,7 +927,8 @@ export function App() {
           repeatMode: queue.getState().repeatMode,
           updatedAt: Date.now()
         }
-      })
+      }),
+      sessionId
     });
   }
 
@@ -918,7 +939,7 @@ export function App() {
       streamBlobFallbackTriedRef.current.delete(track.id);
       const nextSrc = track.source === "local" && track.object_url
         ? track.object_url
-        : streamBlobFallbackRef.current.get(track.id) ?? apiUrl(`/media/track/${track.id}/stream`);
+        : streamBlobFallbackRef.current.get(track.id) ?? murl(`/media/track/${track.id}/stream`);
       const currentSrc = audioRef.current.currentSrc || audioRef.current.src || "";
       if (currentSrc === nextSrc) {
         audioContextRef.current?.resume().catch(() => {});
@@ -950,7 +971,7 @@ export function App() {
       if (track.source === "local" && track.object_url) {
         audioRef.current.src = track.object_url;
       } else {
-        audioRef.current.src = apiUrl(`/media/track/${track.id}/stream`);
+        audioRef.current.src = murl(`/media/track/${track.id}/stream`);
       }
       audioRef.current.load();
       audioContextRef.current.resume().catch(() => {});
@@ -1066,8 +1087,11 @@ export function App() {
     if (playbackRetryingRef.current) return;
     playbackRetryingRef.current = true;
     try {
-      const response = await fetch(apiUrl(`/media/track/${trackId}/stream?blob_fallback=${Date.now()}`), {
-        cache: "no-store"
+      const base = murl(`/media/track/${trackId}/stream`);
+      const blobUrl = `${base}${base.includes("?") ? "&" : "?"}blob_fallback=${Date.now()}`;
+      const response = await fetch(blobUrl, {
+        cache: "no-store",
+        headers: sessionId ? { Authorization: `Bearer ${sessionId}` } : undefined
       });
       if (!response.ok) throw new Error(`blob fallback fetch failed (${response.status})`);
       const blob = await response.blob();
@@ -1209,13 +1233,14 @@ export function App() {
 
   async function deleteSelectedTracks() {
     if (!selectedTrackIds.length) return;
-    if (userId) {
+    if (userId && sessionId) {
       await Promise.all(
         selectedTrackIds.map((trackId) =>
-          fetch(apiUrl("/library/track/delete"), {
+          apiFetch("/library/track/delete", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userId, trackId })
+            body: JSON.stringify({ userId, trackId }),
+            sessionId
           }).catch(() => {})
         )
       );
@@ -1236,11 +1261,12 @@ export function App() {
   async function saveTrackEdit(track: Track) {
     const title = editingTrackTitle.trim();
     if (!title) return;
-    if (track.source !== "local" && userId) {
-      await fetch(apiUrl("/library/track/update"), {
+    if (track.source !== "local" && userId && sessionId) {
+      await apiFetch("/library/track/update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, trackId: track.id, title })
+        body: JSON.stringify({ userId, trackId: track.id, title }),
+        sessionId
       }).catch(() => {});
     }
     setTracks((prev) => prev.map((t) => (t.id === track.id ? { ...t, title } : t)));
@@ -1249,11 +1275,12 @@ export function App() {
   }
 
   async function deletePlaylist(playlistId: string) {
-    if (userId) {
-      await fetch(apiUrl("/playlist/delete"), {
+    if (userId && sessionId) {
+      await apiFetch("/playlist/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, playlistId })
+        body: JSON.stringify({ userId, playlistId }),
+        sessionId
       }).catch(() => {});
     }
     setPlaylists((prev) => prev.filter((p) => p.id !== playlistId));
@@ -1511,7 +1538,7 @@ export function App() {
                   >
                     <span className="flex min-w-0 items-center gap-2">
                         <img
-                          src={track.cover_path ? apiUrl(`/media/track/${track.id}/cover`) : undefined}
+                          src={track.cover_path ? murl(`/media/track/${track.id}/cover`) : undefined}
                         alt=""
                         className="h-8 w-8 rounded-md border border-[#4a4458] bg-[#1f1b24] object-cover"
                         style={{ visibility: track.cover_path ? "visible" : "hidden" }}
@@ -1616,7 +1643,7 @@ export function App() {
                   onClick={() => openArtistPage(artist.name)}
                 >
                   <img
-                    src={artist.coverTrackId ? apiUrl(`/media/track/${artist.coverTrackId}/cover`) : undefined}
+                    src={artist.coverTrackId ? murl(`/media/track/${artist.coverTrackId}/cover`) : undefined}
                     alt=""
                     className="h-10 w-10 rounded-full border border-[#4a4458] bg-[#1f1b24] object-cover"
                     style={{ visibility: artist.coverTrackId ? "visible" : "hidden" }}
@@ -1657,7 +1684,7 @@ export function App() {
                   onClick={() => openAlbumPage(album.name)}
                 >
                   <img
-                    src={album.coverTrackId ? apiUrl(`/media/track/${album.coverTrackId}/cover`) : undefined}
+                    src={album.coverTrackId ? murl(`/media/track/${album.coverTrackId}/cover`) : undefined}
                     alt=""
                     className="h-10 w-10 rounded-lg border border-[#4a4458] bg-[#1f1b24] object-cover"
                     style={{ visibility: album.coverTrackId ? "visible" : "hidden" }}
@@ -1700,7 +1727,7 @@ export function App() {
         <div className="grid gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-center">
           <button className="flex items-center gap-3 text-left" onClick={() => setIsPlayerExpanded(true)}>
             <img
-              src={activeTrack?.cover_path ? apiUrl(`/media/track/${activeTrack.id}/cover`) : undefined}
+              src={activeTrack?.cover_path ? murl(`/media/track/${activeTrack.id}/cover`) : undefined}
               alt=""
               className={`h-11 w-11 rounded-xl border border-[#4a4458] bg-gradient-to-br from-[#d0bcff] via-[#7d5260] to-[#4f378b] object-cover sm:h-14 sm:w-14 sm:rounded-2xl ${
                 isPlaying ? "animate-pulse" : ""
@@ -1898,7 +1925,7 @@ export function App() {
           <div className="relative z-10 mx-auto grid h-full max-w-6xl gap-4 overflow-y-auto px-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-[72px] min-[560px]:grid-cols-[minmax(160px,240px)_1fr] min-[560px]:items-center min-[560px]:gap-4 min-[560px]:overflow-hidden min-[560px]:px-3 min-[560px]:pb-3 min-[560px]:pt-[80px] md:gap-5 md:px-4 md:pb-4 md:pt-[88px] lg:grid-cols-[minmax(220px,320px)_1fr] lg:gap-8 lg:p-8">
             <section className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/15 bg-white/5 p-3 backdrop-blur-2xl min-[560px]:rounded-[24px] min-[560px]:p-3 md:rounded-[28px] md:p-3.5 lg:p-4">
               <img
-                src={activeTrack?.cover_path ? apiUrl(`/media/track/${activeTrack.id}/cover`) : undefined}
+                src={activeTrack?.cover_path ? murl(`/media/track/${activeTrack.id}/cover`) : undefined}
                 alt=""
                 className="mx-auto aspect-square w-full max-w-full max-h-[calc(100%-5.75rem)] rounded-[20px] border border-[#8f7ec555] bg-gradient-to-br from-[#d0bcff] via-[#7d5260] to-[#4f378b] object-cover shadow-2xl"
                 style={{ visibility: activeTrack?.cover_path ? "visible" : "hidden" }}

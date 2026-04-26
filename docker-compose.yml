@@ -9,6 +9,8 @@ services:
       - api
     ports:
       - "3000:3000"
+    environment:
+      VITE_API_ORIGIN: ${VITE_API_ORIGIN:-}
 
   postgres:
     image: postgres:16-alpine
@@ -56,13 +58,15 @@ services:
         condition: service_healthy
     environment:
       PORT: 3001
+      NODE_ENV: ${NODE_ENV:-development}
       POSTGRES_URL: postgresql://${POSTGRES_USER:-musicrr}:${POSTGRES_PASSWORD:-musicrr}@postgres:5432/${POSTGRES_DB:-musicrr}
       DRAGONFLY_URL: redis://dragonfly:6379
       UPLOAD_DIR: /app/apps/api/uploads
       VISUAL_PRESETS_DIR: /app/visual
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3001}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@musicrr.local}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-now-please}
       ADMIN_NAME: ${ADMIN_NAME:-Musicrr Admin}
     ports:
       - "3001:3001"
