@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AppShell, NeonLoader } from "@music/ui";
 import { PlayerQueue } from "@music/core";
 import { apiFetch, apiUrl, getApiWsBase, mediaUrl } from "./apiConfig";
@@ -123,6 +123,31 @@ function colorDistance(a: { r: number; g: number; b: number }, b: { r: number; g
 
 function colorToRgbString(color: { r: number; g: number; b: number }): string {
   return `rgb(${Math.round(color.r)}, ${Math.round(color.g)}, ${Math.round(color.b)})`;
+}
+
+/** File System Access (show*Picker) and crypto.randomUUID need a secure context; plain http:// on a LAN IP is not. */
+function isBrowserInSecureContext(): boolean {
+  if (typeof globalThis.isSecureContext === "boolean") return globalThis.isSecureContext;
+  if (typeof location === "undefined") return true;
+  return location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
+}
+
+/** randomUUID is missing in some browsers or without a secure context; never throw from import flow. */
+function newRandomId(): string {
+  const c: Crypto | undefined = globalThis.crypto;
+  if (c && typeof c.randomUUID === "function") {
+    try {
+      return c.randomUUID();
+    } catch {
+      // fall through
+    }
+  }
+  if (c && typeof c.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    c.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return `id-${Date.now()}-${Math.random().toString(36).slice(2, 12)}${Math.random().toString(36).slice(2, 12)}`;
 }
 
 function adjustColorLightness(color: { r: number; g: number; b: number }, delta: number): { r: number; g: number; b: number } {
@@ -632,6 +657,13 @@ export function App() {
     return () => window.removeEventListener("pointerdown", onPointerDown);
   }, [openTrackMenuId]);
 
+  useLayoutEffect(() => {
+    if (!sessionId) return;
+    const el = folderInputRef.current;
+    if (!el) return;
+    el.setAttribute("webkitdirectory", "");
+  }, [sessionId]);
+
   async function login() {
     setLoading(true);
     setAuthMessage("");
@@ -710,7 +742,7 @@ export function App() {
   async function importFromFiles() {
     setIsImportMenuOpen(false);
     try {
-      if ("showOpenFilePicker" in window) {
+      if (isBrowserInSecureContext() && "showOpenFilePicker" in window) {
         const picker = (window as unknown as {
           showOpenFilePicker: (opts: {
             multiple: boolean;
@@ -742,7 +774,8 @@ export function App() {
 
   async function importFromFolder() {
     setIsImportMenuOpen(false);
-    if ("showDirectoryPicker" in window) {
+    const w = window as unknown as { showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle> };
+    if (isBrowserInSecureContext() && typeof w.showDirectoryPicker === "function") {
       await pickDirectoryWithFsApi();
       return;
     }
@@ -806,7 +839,7 @@ export function App() {
     fileArr.forEach((file, idx) => {
       const name = file.name.replace(/\.[^/.]+$/, "");
       imported.push({
-        id: `local-${Date.now()}-${idx}-${crypto.randomUUID()}`,
+        id: `local-${Date.now()}-${idx}-${newRandomId()}`,
         title: importTitle.trim() ? `${importTitle.trim()} - ${name}` : name,
         artist: "Lokale Datei",
         album: "Lokaler Import",
