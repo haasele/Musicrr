@@ -1,0 +1,16 @@
+{
+  "name": "music-web",
+  "private": true,
+  "packageManager": "bun@1.2.14",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run dev:api & bun run dev:web",
+    "dev:api": "bun run --cwd apps/api dev",
+    "dev:web": "bun run --cwd apps/web dev",
+    "build": "bun run --cwd packages/core build && bun run --cwd packages/crypto build && bun run --cwd packages/importer build && bun run --cwd apps/api build && bun run --cwd apps/web build",
+    "test": "bun run --cwd packages/core test && bun run --cwd packages/crypto test && bun run --cwd packages/importer test"
+  }
+}

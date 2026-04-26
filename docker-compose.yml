@@ -1,0 +1,70 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: musicrr-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: musicrr-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-musicrr}
+      POSTGRES_USER: ${POSTGRES_USER:-musicrr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-musicrr}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ./.data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-musicrr} -d ${POSTGRES_DB:-musicrr}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    container_name: musicrr-dragonfly
+    restart: unless-stopped
+    command: ["--dir=/data"]
+    ports:
+      - "${DRAGONFLY_PORT:-6379}:6379"
+    volumes:
+      - ./.data/dragonfly:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: musicrr-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      dragonfly:
+        condition: service_healthy
+    environment:
+      PORT: 3001
+      POSTGRES_URL: postgresql://${POSTGRES_USER:-musicrr}:${POSTGRES_PASSWORD:-musicrr}@postgres:5432/${POSTGRES_DB:-musicrr}
+      DRAGONFLY_URL: redis://dragonfly:6379
+      UPLOAD_DIR: /app/apps/api/uploads
+      VISUAL_PRESETS_DIR: /app/visual
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3001}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@musicrr.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      ADMIN_NAME: ${ADMIN_NAME:-Musicrr Admin}
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./.data/uploads:/app/apps/api/uploads

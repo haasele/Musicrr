@@ -1,0 +1,9 @@
+node_modules
+dist
+.DS_Store
+*.db-shm
+*.db-wal
+coverage
+apps/desktop/src-tauri/target
+.data/*
+!.data/.gitkeep

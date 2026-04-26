@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Music Platform",
+  "version": "0.1.0",
+  "identifier": "com.music.platform",
+  "build": {
+    "beforeDevCommand": "bun --cwd ../web run dev",
+    "beforeBuildCommand": "bun --cwd ../web run build",
+    "frontendDist": "../web/dist",
+    "devUrl": "http://localhost:3000"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Music Platform",
+        "width": 1320,
+        "height": 860
+      }
+    ]
+  }
+}

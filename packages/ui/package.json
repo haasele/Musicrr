@@ -1,0 +1,10 @@
+{
+  "name": "@music/ui",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.tsx",
+  "peerDependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  }
+}
