@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createPlaylist, reorderPlaylistItems } from "@music/core";
 import { encryptJson } from "@music/crypto";
 import { importFolderRecursive } from "@music/importer";
-import { parseBuffer, selectCover, type IAudioMetadata } from "music-metadata";
+import { parseBuffer, parseFile, selectCover, type IAudioMetadata } from "music-metadata";
 import {
   buildCorsOriginOption,
   normalizeCorsOriginEntry,
@@ -84,6 +84,35 @@ function extensionForParse(fileName: string, mime: string | undefined): string {
   if (mime?.includes("flac")) return "flac";
   if (mime?.includes("ogg")) return "ogg";
   return "mp3";
+}
+
+/**
+ * Browsers often send no MIME; buffer-only parse can miss album art in some containers.
+ * After writing the file, parseFile() typically yields full common.picture for MP3/FLAC/M4A.
+ */
+async function parseAudioMetadataForImport(
+  storedPath: string,
+  bytes: Uint8Array,
+  file: { name: string; type: string },
+  extForParser: string,
+  titleFallback: string
+): Promise<IAudioMetadata> {
+  const fileInfo = { mimeType: file.type || undefined, path: file.name, size: bytes.length };
+  const parseFailedFallback: IAudioMetadata = {
+    common: { track: { no: null, of: null }, disk: { no: null, of: null }, title: titleFallback },
+    format: { duration: undefined as number | undefined }
+  } as IAudioMetadata;
+  let m: IAudioMetadata | null = await parseBuffer(bytes, fileInfo, { duration: true }).catch(() => null);
+  if (!m) m = await parseBuffer(bytes, extForParser, { duration: true }).catch(() => null);
+  if (!m) m = await parseFile(storedPath, { duration: true }).catch(() => null);
+  if (!m) return parseFailedFallback;
+  if (!selectCover(m.common.picture)?.data?.length) {
+    const disk = await parseFile(storedPath, { duration: true }).catch(() => null);
+    if (disk?.common?.picture?.length) {
+      m = { ...m, common: { ...m.common, picture: disk.common.picture } };
+    }
+  }
+  return m;
 }
 
 async function resolveStoredMediaPath(storedPath: string): Promise<string | null> {
@@ -513,23 +542,15 @@ const app = new Elysia()
       await writeFile(storedPath, bytes);
 
       const extForParser = extensionForParse(String(file.name), file.type);
-      const fileInfo = { mimeType: file.type || undefined, path: file.name, size: bytes.length };
       const titleFallback = file.name.replace(/\.[^/.]+$/, "");
-      const parseFailedFallback = {
-        common: { track: { no: null, of: null }, disk: { no: null, of: null }, title: titleFallback },
-        format: { duration: undefined as number | undefined }
-      } as IAudioMetadata;
-      const metadata: IAudioMetadata =
-        (await parseBuffer(bytes, fileInfo, { duration: true }).catch(() =>
-          parseBuffer(bytes, extForParser, { duration: true }).catch(() => null)
-        )) ?? parseFailedFallback;
-
+      const metadata = await parseAudioMetadataForImport(storedPath, bytes, { name: file.name, type: file.type }, extForParser, titleFallback);
       let coverPath: string | null = null;
       const coverPic = selectCover(metadata.common.picture);
       if (coverPic?.data && coverPic.data.length > 0) {
         const coverExt = coverExtForMimeFormat(String(coverPic.format ?? ""));
         coverPath = join(coverDir, `${hash}${coverExt}`);
-        await writeFile(coverPath, coverPic.data);
+        const raw = coverPic.data;
+        await writeFile(coverPath, raw instanceof Buffer ? raw : new Uint8Array(raw));
       }
 
       const lyricsText = Array.isArray(metadata.common.lyrics) && metadata.common.lyrics.length > 0

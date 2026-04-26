@@ -315,22 +315,31 @@ export function App() {
 
   useEffect(() => {
     if (!userId || !sessionId) return;
-    apiFetch(`/library/tracks/${userId}?limit=500`, { sessionId })
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`tracks ${res.status}`))))
-      .then((data: Track[]) => {
+    let cancelled = false;
+    (async () => {
+      const tr = await apiFetch(`/library/tracks/${userId}?limit=500`, { sessionId });
+      if (cancelled) return;
+      if (tr.ok) {
+        const data = (await tr.json()) as Track[];
         const normalized = data.map((t) => ({ ...t, source: "server" as const }));
         setTracks(normalized);
         queue.load(normalized.map((t) => t.id));
-      })
-      .catch(() => {
-        setAuthMessage("Track-Liste konnte nicht geladen werden.");
-      });
-    apiFetch(`/users/${userId}/playlists`, { sessionId })
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`playlists ${res.status}`))))
-      .then((data: { id: string; name: string }[]) => setPlaylists(data))
-      .catch(() => {
-        setAuthMessage("Playlisten konnten nicht geladen werden.");
-      });
+      } else {
+        // CORS/Netz/API: keine Login-Maske spammen; API braucht CORS_ORIGINS = exakt diese Web-App-URL.
+      }
+      const pl = await apiFetch(`/users/${userId}/playlists`, { sessionId });
+      if (cancelled) return;
+      if (pl.ok) {
+        setPlaylists((await pl.json()) as { id: string; name: string }[]);
+      } else {
+        setPlaylists([]);
+      }
+    })().catch(() => {
+      // Netz/CORS/Abort
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [userId, sessionId]);
 
   useEffect(() => {
@@ -356,20 +365,49 @@ export function App() {
 
   useEffect(() => {
     if (!sessionId) return;
-    const ws = new WebSocket(`${getApiWsBase()}/events`);
+    let dead = false;
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(`${getApiWsBase()}/events`);
+    } catch {
+      return;
+    }
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "client.auth", sessionId }));
+      if (dead) return;
+      try {
+        ws.send(JSON.stringify({ type: "client.auth", sessionId }));
+      } catch {
+        // ignore
+      }
     };
     ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      if (message.type === "import.progress") {
-        setImportProgress(`${message.processed}/${message.total}`);
-      }
-      if (message.type === "import.done") {
-        setImportProgress(`done (${message.imported})`);
+      if (dead) return;
+      try {
+        const message = JSON.parse(event.data) as { type?: string; processed?: number; total?: number; imported?: number };
+        if (message.type === "import.progress" && message.processed != null && message.total != null) {
+          setImportProgress(`${message.processed}/${message.total}`);
+        }
+        if (message.type === "import.done" && message.imported != null) {
+          setImportProgress(`done (${message.imported})`);
+        }
+      } catch {
+        // ignore
       }
     };
-    return () => ws.close();
+    return () => {
+      dead = true;
+      ws.onopen = null;
+      ws.onmessage = null;
+      ws.onerror = null;
+      ws.onclose = null;
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        try {
+          ws.close();
+        } catch {
+          // ignore
+        }
+      }
+    };
   }, [sessionId]);
 
   useEffect(() => {

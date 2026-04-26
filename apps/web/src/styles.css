@@ -319,7 +319,6 @@ button {
   filter: blur(calc(48px + var(--music-energy, 0.2) * 22px));
   mix-blend-mode: screen;
   opacity: calc(0.55 + var(--music-energy, 0.2) * 0.35);
-  will-change: transform, filter, opacity;
 }
 
 .gradient-aurora-a {
@@ -354,7 +353,6 @@ button {
   transform: translate(-50%, -50%);
   animation: orbDrift var(--orb-duration) ease-in-out infinite alternate;
   animation-delay: var(--orb-delay);
-  will-change: transform, filter, opacity;
 }
 
 @keyframes gradientDrift {
