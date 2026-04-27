@@ -2507,7 +2507,7 @@ useEffect(() => {
               placeholder="Suche nach Track, Artist, Album"
             />
 
-            <div className="col-span-4 flex items-center justify-center gap-2 sm:col-auto sm:contents">
+            <div className="col-span-4 flex items-center justify-center gap-2 sm:justify-start">
             <div className="relative">
               <button
                 className={`panel-icon-btn h-10 min-w-10 px-0 sm:h-auto sm:min-w-[40px] sm:px-[10px] ${isEditMode ? "panel-icon-btn-active" : ""}`}
@@ -3420,6 +3420,7 @@ useEffect(() => {
                 </div>
               </div>
 
+              <div className="h-2 min-[560px]:hidden" aria-hidden />
               <div className="relative mt-2 grid w-full min-w-0 max-w-full grid-cols-[1fr_auto_1fr] items-center gap-2 pb-1 min-[560px]:mt-0 min-[560px]:pb-0">
                 <div className="flex items-center justify-end gap-1.5 min-[560px]:gap-2">
                   <button
