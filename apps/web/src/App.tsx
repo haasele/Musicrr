@@ -2499,15 +2499,15 @@ useEffect(() => {
               </button>
             </div>
           ) : null}
-          <div className="mb-4 grid grid-cols-4 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-start sm:gap-2 sm:overflow-x-visible sm:pb-1">
+          <div className="mb-4 grid grid-cols-4 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-2 sm:pb-1">
             <input
-              className="col-span-4 mx-auto h-10 w-full min-w-0 max-w-[560px] rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff] sm:mx-0 sm:w-[min(56vw,560px)]"
+              className="col-span-4 mx-auto h-10 w-full min-w-0 max-w-[560px] rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff] sm:col-auto sm:mx-0 sm:max-w-none"
               value={query}
               onChange={(e) => searchTracks(e.target.value)}
               placeholder="Suche nach Track, Artist, Album"
             />
 
-            <div className="col-span-4 flex items-center justify-center gap-2 sm:justify-start">
+            <div className="col-span-4 flex items-center justify-center gap-2 sm:col-auto sm:justify-end">
             <div className="relative">
               <button
                 className={`panel-icon-btn h-10 min-w-10 px-0 sm:h-auto sm:min-w-[40px] sm:px-[10px] ${isEditMode ? "panel-icon-btn-active" : ""}`}
@@ -3352,7 +3352,7 @@ useEffect(() => {
             </button>
           </div>
 
-          <div className="relative z-10 mx-auto grid h-full min-w-0 max-w-6xl grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-x-hidden overflow-y-auto px-3 pb-3 pt-[72px] min-[560px]:grid-cols-[minmax(160px,240px)_1fr] min-[560px]:grid-rows-1 min-[560px]:items-center min-[560px]:gap-4 min-[560px]:overflow-hidden min-[560px]:px-3 min-[560px]:pb-3 min-[560px]:pt-[80px] md:gap-5 md:px-4 md:pb-4 md:pt-[88px] lg:grid-cols-[minmax(220px,320px)_1fr] lg:gap-8 lg:p-8">
+          <div className="relative z-10 mx-auto grid h-full min-w-0 max-w-6xl grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-x-hidden overflow-y-hidden px-3 pb-3 pt-[72px] min-[560px]:grid-cols-[minmax(160px,240px)_1fr] min-[560px]:grid-rows-1 min-[560px]:items-center min-[560px]:gap-4 min-[560px]:overflow-hidden min-[560px]:px-3 min-[560px]:pb-3 min-[560px]:pt-[80px] md:gap-5 md:px-4 md:pb-4 md:pt-[88px] lg:grid-cols-[minmax(220px,320px)_1fr] lg:gap-8 lg:p-8">
             <section className="self-start flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[24px] border border-white/15 bg-white/5 p-3 backdrop-blur-2xl min-[560px]:self-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:rounded-[28px] md:p-3.5 lg:p-4">
               {activeTrack ? (
                 <CoverArtSlot
@@ -3420,7 +3420,7 @@ useEffect(() => {
                 </div>
               </div>
 
-              <div className="h-2 min-[560px]:hidden" aria-hidden />
+              <div className="h-5 min-[560px]:hidden" aria-hidden />
               <div className="relative mt-2 grid w-full min-w-0 max-w-full grid-cols-[1fr_auto_1fr] items-center gap-2 pb-1 min-[560px]:mt-0 min-[560px]:pb-0">
                 <div className="flex items-center justify-end gap-1.5 min-[560px]:gap-2">
                   <button
@@ -3501,7 +3501,6 @@ useEffect(() => {
                   </button>
                 </div>
               </div>
-              <div className="h-[calc(1rem+env(safe-area-inset-bottom))] min-[560px]:hidden" aria-hidden />
               </div>
             </section>
           </div>
