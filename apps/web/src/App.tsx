@@ -21,6 +21,9 @@ type Track = {
 };
 
 const queue = new PlayerQueue();
+const WAVEFORM_BIN_COUNT = 192;
+const PROGRESS_BAR_WIDTH_PX = 3;
+const PROGRESS_BAR_GAP_PX = 2;
 
 function IconButton({
   title,
@@ -582,6 +585,17 @@ function adjustColorLightness(color: { r: number; g: number; b: number }, delta:
   return next;
 }
 
+function formatPresetFriendlyName(rawPresetName: string): string {
+  const withoutPath = rawPresetName.split(/[\\/]/).pop() ?? rawPresetName;
+  const withoutExt = withoutPath.replace(/\.(milk|json|preset)$/i, "");
+  const readable = withoutExt
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!readable) return "Preset";
+  return readable.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export function App() {
   const [email, setEmail] = useState(localStorage.getItem("email") ?? "");
   const [password, setPassword] = useState("");
@@ -634,15 +648,23 @@ export function App() {
   const [themeAccentB, setThemeAccentB] = useState("#7d5260");
   const [themeAccentC, setThemeAccentC] = useState("#4f378b");
   const [audioEnergy, setAudioEnergy] = useState(0.18);
+  const [waveformLevels, setWaveformLevels] = useState<number[]>(() => Array.from({ length: WAVEFORM_BIN_COUNT }, () => 0.14));
+  const [homeProgressBarCount, setHomeProgressBarCount] = useState(56);
+  const [fullscreenProgressBarCount, setFullscreenProgressBarCount] = useState(56);
   const [isAnonymousShareMode, setIsAnonymousShareMode] = useState(false);
   const [shareAccessToken, setShareAccessToken] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const homeProgressRef = useRef<HTMLDivElement | null>(null);
+  const fullscreenProgressRef = useRef<HTMLDivElement | null>(null);
   const importMenuRef = useRef<HTMLDivElement | null>(null);
   const importMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [isImportMenuOpen, setIsImportMenuOpen] = useState(false);
+  const queueDrawerRef = useRef<HTMLDivElement | null>(null);
+  const queueDrawerTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [isQueueDrawerOpen, setIsQueueDrawerOpen] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -652,8 +674,10 @@ export function App() {
   const currentTrackMetaRef = useRef<{ id: string; title: string } | null>(null);
   const streamBlobFallbackRef = useRef<Map<string, string>>(new Map());
   const streamBlobFallbackTriedRef = useRef<Set<string>>(new Set());
+  const nextTrackHandlerRef = useRef<() => void>(() => {});
   const themeAccentRafRef = useRef<number | null>(null);
   const energySmoothRef = useRef(0.18);
+  const waveformSmoothRef = useRef<number[]>(Array.from({ length: WAVEFORM_BIN_COUNT }, () => 0.14));
   const milkEngineRef = useRef<MilkEngine | null>(null);
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
   const moreMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -709,7 +733,8 @@ export function App() {
       .then((res) => res.json())
       .then((data: string[]) => {
         setVisualPresets(data);
-        setPreset(data[0] ?? "");
+        const preset158 = data.find((name) => /(^|[\\/])158(\.[^./\\]+)?$/i.test(name) || /(^|[^0-9])158([^0-9]|$)/.test(name));
+        setPreset(preset158 ?? data[0] ?? "");
       })
       .catch(() => {});
   }, []);
@@ -1069,6 +1094,16 @@ useEffect(() => {
   );
 
   const activeTrack = sortedTracks[currentTrackIndex];
+  const upcomingTracks = useMemo(() => {
+    if (queueUiState.trackIds.length === 0) return [] as Track[];
+    const byId = new Map(sortedTracks.map((track) => [track.id, track] as const));
+    const fallbackById = new Map(tracks.map((track) => [track.id, track] as const));
+    return queueUiState.trackIds
+      .slice(queueUiState.currentIndex + 1)
+      .map((trackId) => byId.get(trackId) ?? fallbackById.get(trackId) ?? null)
+      .filter((track): track is Track => track !== null);
+  }, [queueUiState, sortedTracks, tracks]);
+
   function openArtistPage(artistName: string): void {
     if (!artistName) return;
     setSelectedArtist(artistName);
@@ -1084,7 +1119,17 @@ useEffect(() => {
   }
 
   const progressRatio = duration > 0 ? Math.max(0, Math.min(1, currentTime / duration)) : 0;
-  const waveBars = useMemo(() => Array.from({ length: 56 }, (_, i) => i), []);
+  const homeProgressBars = useMemo(() => Array.from({ length: homeProgressBarCount }, (_, i) => i), [homeProgressBarCount]);
+  const fullscreenProgressBars = useMemo(
+    () => Array.from({ length: fullscreenProgressBarCount }, (_, i) => i),
+    [fullscreenProgressBarCount]
+  );
+  const waveformLevelAt = useCallback((barIndex: number, totalBars: number): number => {
+    if (!waveformLevels.length || totalBars <= 0) return 0.12;
+    if (totalBars === 1) return waveformLevels[0] ?? 0.12;
+    const mappedIndex = Math.floor((barIndex / (totalBars - 1)) * (waveformLevels.length - 1));
+    return waveformLevels[mappedIndex] ?? 0.12;
+  }, [waveformLevels]);
   const auroraOrbs = useMemo(
     () =>
       Array.from({ length: 7 }, (_, i) => ({
@@ -1189,8 +1234,30 @@ useEffect(() => {
   }, [activeTrack?.id, activeTrack?.cover_path, murl]);
 
   useEffect(() => {
+    const calcBarCount = (width: number) =>
+      Math.max(12, Math.floor((Math.max(0, width) + PROGRESS_BAR_GAP_PX) / (PROGRESS_BAR_WIDTH_PX + PROGRESS_BAR_GAP_PX)));
+    const update = () => {
+      if (homeProgressRef.current) {
+        setHomeProgressBarCount(calcBarCount(homeProgressRef.current.clientWidth));
+      }
+      if (fullscreenProgressRef.current) {
+        setFullscreenProgressBarCount(calcBarCount(fullscreenProgressRef.current.clientWidth));
+      }
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", update);
+      return () => window.removeEventListener("resize", update);
+    }
+    const observer = new ResizeObserver(() => update());
+    if (homeProgressRef.current) observer.observe(homeProgressRef.current);
+    if (fullscreenProgressRef.current) observer.observe(fullscreenProgressRef.current);
+    return () => observer.disconnect();
+  }, [isPlayerExpanded]);
+
+  useEffect(() => {
     const needsEnergyLoop = isPlayerExpanded && playerViewMode === "gradient" && isBeatReactive && isPlaying;
-    if (!needsEnergyLoop) {
+    if (!isPlaying) {
       if (analyserRafRef.current) {
         cancelAnimationFrame(analyserRafRef.current);
         analyserRafRef.current = null;
@@ -1209,6 +1276,8 @@ useEffect(() => {
     const analyser = analyserRef.current;
     if (!analyser) return;
     const data = new Uint8Array(analyser.frequencyBinCount);
+    const bars = waveformSmoothRef.current.length;
+    const binsPerBar = Math.max(1, Math.floor(data.length / bars));
     let frameCounter = 0;
 
     const tick = () => {
@@ -1219,8 +1288,23 @@ useEffect(() => {
       const target = 0.14 + raw * 0.95;
       energySmoothRef.current += (target - energySmoothRef.current) * 0.08;
       frameCounter += 1;
+      if (frameCounter % 3 === 0) {
+        const nextLevels = waveformSmoothRef.current.slice(0, bars);
+        for (let barIdx = 0; barIdx < bars; barIdx += 1) {
+          const start = barIdx * binsPerBar;
+          const end = Math.min(data.length, start + binsPerBar);
+          let localSum = 0;
+          for (let i = start; i < end; i += 1) localSum += data[i];
+          const average = end > start ? localSum / (end - start) : 0;
+          const normalized = clamp(average / 255, 0, 1);
+          const eased = Math.pow(normalized, 0.75);
+          nextLevels[barIdx] = nextLevels[barIdx] + (eased - nextLevels[barIdx]) * 0.36;
+        }
+        waveformSmoothRef.current = nextLevels;
+        setWaveformLevels(nextLevels);
+      }
       // Keep React updates sparse; this state drives only CSS energy effects.
-      if (frameCounter % 4 === 0) {
+      if (needsEnergyLoop && frameCounter % 4 === 0) {
         setAudioEnergy(clamp(energySmoothRef.current, 0.08, 1));
       }
       analyserRafRef.current = requestAnimationFrame(tick);
@@ -1307,6 +1391,18 @@ useEffect(() => {
     window.addEventListener("pointerdown", onPointerDown);
     return () => window.removeEventListener("pointerdown", onPointerDown);
   }, [isImportMenuOpen]);
+
+  useEffect(() => {
+    if (!isQueueDrawerOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (queueDrawerRef.current?.contains(target) || queueDrawerTriggerRef.current?.contains(target)) return;
+      setIsQueueDrawerOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => window.removeEventListener("pointerdown", onPointerDown);
+  }, [isQueueDrawerOpen]);
 
   useEffect(() => {
     if (!openTrackMenuId) return;
@@ -1905,6 +2001,7 @@ useEffect(() => {
     const nextIndex = sortedTracks.findIndex((t) => t.id === nextTrackId);
     if (nextIndex >= 0) play(nextIndex);
   }
+  nextTrackHandlerRef.current = next;
 
   function previous() {
     const prevQueueIndex = queue.previous();
@@ -2066,7 +2163,7 @@ useEffect(() => {
     const onDurationChange = () => setDuration(audio.duration || 0);
     const onEnded = () => {
       setIsPlaying(false);
-      next();
+      nextTrackHandlerRef.current();
     };
     const onError = () => {
       if (playbackRetryingRef.current) return;
@@ -2277,7 +2374,7 @@ useEffect(() => {
   }
 
   const libraryBackVisible =
-    tab !== "tracks" || selectedArtist !== null || selectedAlbum !== null || openPlaylist !== null;
+    selectedArtist !== null || selectedAlbum !== null || openPlaylist !== null;
 
   const onLibraryBack = () => {
     if (openPlaylist) {
@@ -2292,7 +2389,6 @@ useEffect(() => {
       setSelectedAlbum(null);
       return;
     }
-    setTab("tracks");
   };
 
   const libraryBackLabel =
@@ -2300,9 +2396,7 @@ useEffect(() => {
       ? "Zur Playlists-Uebersicht"
       : selectedArtist != null
         ? "Alle Kuenstler"
-        : selectedAlbum != null
-          ? "Alle Alben"
-          : "Zur Titel-Liste";
+        : "Alle Alben";
 
   return (
     <AppShell
@@ -2337,13 +2431,14 @@ useEffect(() => {
       ) : null}
       <div className="home-theme-root grid gap-4 pb-44 md:gap-5 md:pb-40" style={homeThemeVars}>
         <section className="home-theme-panel rounded-[24px] border border-[#4a445866] p-3 shadow-xl sm:rounded-[28px] sm:p-5">
-          <div className="mb-4 flex flex-wrap justify-center gap-2">
+          <div className="home-tabs-wrap mb-4">
             {tabs.map((value) => (
               <button
                 key={value}
-                className={`theme-tab rounded-full px-4 py-2 text-sm font-medium capitalize transition ${
+                className={`theme-tab px-4 py-2 text-sm font-medium capitalize transition ${
                   tab === value ? "theme-tab-active" : ""
                 }`}
+                aria-current={tab === value ? "page" : undefined}
                 onClick={() => setTab(value)}
               >
                 {value}
@@ -2354,7 +2449,7 @@ useEffect(() => {
             <div className="mb-4">
               <button
                 type="button"
-                className="inline-flex w-full max-w-3xl items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.05] py-2.5 pl-3 pr-4 text-left text-sm font-medium text-[#e8def8] transition hover:bg-white/[0.1] sm:inline-flex sm:w-auto sm:justify-start"
+                className="panel-icon-btn h-10 min-w-10 px-0"
                 title={libraryBackLabel}
                 aria-label={libraryBackLabel}
                 onClick={onLibraryBack}
@@ -2365,7 +2460,6 @@ useEffect(() => {
                     <path d="M12 19l-7-7 7-7" />
                   </IconBase>
                 </span>
-                {libraryBackLabel}
               </button>
             </div>
           ) : null}
@@ -2409,9 +2503,9 @@ useEffect(() => {
                 onClick={() => setIsImportMenuOpen((v) => !v)}
               >
                 <IconBase>
-                  <path d="M12 3v12" />
-                  <path d="M8 11l4 4 4-4" />
-                  <path d="M4 19h16" />
+                  <path d="M12 16V6" />
+                  <path d="M8.5 9.5L12 6l3.5 3.5" />
+                  <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
                 </IconBase>
               </button>
               {isImportMenuOpen ? (
@@ -2438,6 +2532,25 @@ useEffect(() => {
             </div>
 
             <div className="relative justify-self-center sm:justify-self-auto">
+              <button
+                ref={queueDrawerTriggerRef}
+                type="button"
+                className={`panel-icon-btn h-10 min-w-10 px-0 sm:h-auto sm:min-w-[40px] sm:px-[10px] ${isQueueDrawerOpen ? "panel-icon-btn-active" : ""}`}
+                title="Wiedergabeliste"
+                aria-label="Wiedergabeliste"
+                aria-expanded={isQueueDrawerOpen}
+                onClick={() => setIsQueueDrawerOpen((v) => !v)}
+              >
+                <IconBase>
+                  <path d="M6 7h12" />
+                  <path d="M6 12h12" />
+                  <path d="M6 17h7" />
+                  <path d="M17 17h.01" />
+                </IconBase>
+              </button>
+            </div>
+
+            <div className="relative z-30 justify-self-center sm:justify-self-auto">
               <button
                 ref={filterMenuTriggerRef}
                 className="panel-icon-btn h-10 min-w-10 px-0 sm:h-auto sm:min-w-[40px] sm:px-[10px]"
@@ -2916,8 +3029,71 @@ useEffect(() => {
         </section>
       </div>
 
+      {isQueueDrawerOpen ? (
+        <aside
+          ref={queueDrawerRef}
+          className="fixed right-2 top-24 z-[120] w-[min(90vw,360px)] rounded-[24px] border border-white/15 bg-[#18151fe8] p-3 shadow-2xl backdrop-blur-2xl sm:right-4 sm:w-[360px] sm:p-4"
+          style={homeThemeVars}
+          aria-label="Naechste Titel"
+        >
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div>
+              <div className="text-xs uppercase tracking-[0.14em] text-[#cac4d0]">Wiedergabeliste</div>
+              <div className="text-sm font-semibold text-[#f5eff7]">Kommt als naechstes</div>
+            </div>
+            <button
+              type="button"
+              className="panel-icon-btn h-8 min-w-8 px-2"
+              onClick={() => setIsQueueDrawerOpen(false)}
+              aria-label="Wiedergabeliste schliessen"
+            >
+              <IconBase>
+                <path d="M6 6l12 12" />
+                <path d="M18 6L6 18" />
+              </IconBase>
+            </button>
+          </div>
+          <div className="mb-3 h-1 w-full rounded-full bg-white/10">
+            <div className="h-full rounded-full" style={{ width: "56%", background: "var(--home-accent-a)" }} />
+          </div>
+          {upcomingTracks.length === 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-4 text-sm text-[#cac4d0]">
+              Keine weiteren Titel in der Queue.
+            </div>
+          ) : (
+            <div className="max-h-[min(58vh,32rem)] space-y-2 overflow-y-auto pr-1">
+              {upcomingTracks.map((track, idx) => (
+                <button
+                  key={`${track.id}-${idx}`}
+                  type="button"
+                  className="home-accent-item flex w-full items-center gap-3 rounded-2xl border px-3 py-2 text-left"
+                  onClick={() => {
+                    const nextIndex = sortedTracks.findIndex((t) => t.id === track.id);
+                    if (nextIndex >= 0) {
+                      play(nextIndex);
+                      setIsQueueDrawerOpen(false);
+                    }
+                  }}
+                >
+                  <CoverArtSlot
+                    className="h-10 w-10 shrink-0 rounded-lg border border-white/15"
+                    hasCover={Boolean(track.cover_path)}
+                    coverUrl={murl(`/media/track/${track.id}/cover`)}
+                    label={track.title}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-[#f5eff7]">{track.title}</span>
+                    <span className="block truncate text-xs text-[#cac4d0]">{track.artist}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </aside>
+      ) : null}
+
       <footer
-        className="home-theme-footer fixed inset-x-2 bottom-3 z-30 rounded-[20px] border border-white/15 p-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl sm:inset-x-4 sm:bottom-5 sm:rounded-[24px] sm:p-3 md:inset-x-6"
+        className="home-theme-footer fixed inset-x-0 bottom-0 z-30 rounded-t-[20px] border border-white/15 p-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl sm:inset-x-4 sm:bottom-4 sm:rounded-[24px] sm:p-3 md:inset-x-6"
         style={homeThemeVars}
       >
         <div className="grid gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-center">
@@ -2942,6 +3118,7 @@ useEffect(() => {
 
           <div className="space-y-1 md:min-w-0">
             <div
+              ref={homeProgressRef}
               role="slider"
               aria-label="Song progress"
               aria-valuemin={0}
@@ -2976,17 +3153,18 @@ useEffect(() => {
               }}
             >
               <div className="home-progress-fill absolute inset-y-0 left-0 rounded-r-xl" style={{ width: `${progressRatio * 100}%` }} />
-              <div className="grid h-full grid-flow-col auto-cols-fr items-end gap-[2px]">
-                {waveBars.map((bar) => {
-                  const barRatio = bar / (waveBars.length - 1);
+              <div className="flex h-full items-end justify-start gap-[2px] overflow-hidden">
+                {homeProgressBars.map((bar) => {
+                  const barRatio = homeProgressBars.length > 1 ? bar / (homeProgressBars.length - 1) : 0;
                   const isPassed = barRatio <= progressRatio;
-                  const staticShape = Math.sin((bar / waveBars.length) * Math.PI * 3.2);
-                  const baseHeight = 8 + Math.max(0, staticShape) * 10;
+                  const level = waveformLevelAt(bar, homeProgressBars.length);
+                  const baseHeight = 6 + level * 16;
                   return (
                     <span
                       key={bar}
                       className={`wave-bar ${isPlaying && isPassed ? "wave-animate" : ""} ${isPassed ? "wave-passed" : "wave-pending"}`}
                       style={{
+                        width: `${PROGRESS_BAR_WIDTH_PX}px`,
                         height: `${baseHeight}px`,
                         animationDelay: `${bar * 26}ms`
                       }}
@@ -3164,6 +3342,7 @@ useEffect(() => {
               <div className="flex h-full min-h-0 flex-col gap-2.5 md:gap-3">
               <div className="flex min-h-0 flex-1 flex-col gap-1.5 min-[560px]:gap-2">
                 <div
+                  ref={fullscreenProgressRef}
                   role="slider"
                   aria-label="Song progress expanded"
                   aria-valuemin={0}
@@ -3177,17 +3356,18 @@ useEffect(() => {
                   }}
                 >
                   <div className="absolute inset-y-0 left-0 rounded-r-xl bg-white/8 backdrop-blur-xl" style={{ width: `${progressRatio * 100}%` }} />
-                  <div className="grid h-full grid-flow-col auto-cols-fr items-end gap-[2px]">
-                    {waveBars.map((bar) => {
-                      const barRatio = bar / (waveBars.length - 1);
+                  <div className="flex h-full items-end justify-start gap-[2px] overflow-hidden">
+                    {fullscreenProgressBars.map((bar) => {
+                      const barRatio = fullscreenProgressBars.length > 1 ? bar / (fullscreenProgressBars.length - 1) : 0;
                       const isPassed = barRatio <= progressRatio;
-                      const staticShape = Math.sin((bar / waveBars.length) * Math.PI * 3.2);
-                      const baseHeight = 16 + Math.max(0, staticShape) * 62;
+                      const level = waveformLevelAt(bar, fullscreenProgressBars.length);
+                      const baseHeight = 12 + level * 82;
                       return (
                         <span
                           key={`expanded-${bar}`}
                           className={`wave-bar ${isPlaying && isPassed ? "wave-animate" : ""} ${isPassed ? "wave-passed" : "wave-pending"}`}
                           style={{
+                            width: `${PROGRESS_BAR_WIDTH_PX}px`,
                             height: `${baseHeight}%`,
                             animationDelay: `${bar * 26}ms`
                           }}
@@ -3377,7 +3557,7 @@ useEffect(() => {
                       )}
                       {visualPresets.map((name) => (
                         <option key={name} value={name} style={{ backgroundColor: "#1a1622", color: "#f5eff7" }}>
-                          {name.replace(/\.(milk|json|preset)$/i, "")}
+                          {formatPresetFriendlyName(name)}
                         </option>
                       ))}
                     </select>

@@ -181,15 +181,44 @@ button {
     );
 }
 
+.home-tabs-wrap {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+@media (min-width: 640px) {
+  .home-tabs-wrap {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
 .theme-tab {
+  position: relative;
+  min-height: 2.75rem;
+  border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--home-accent-a, #d0bcff) 22%, #4a4458);
-  background: color-mix(in srgb, var(--home-accent-c, #4f378b) 10%, #2b2930);
+  background:
+    linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--home-accent-c, #4f378b) 11%, #2b2930) 0%,
+      color-mix(in srgb, var(--home-accent-b, #7d5260) 8%, #27242d) 100%
+    );
   color: #e6e0e9;
+  text-align: center;
+  letter-spacing: 0.01em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .theme-tab:hover {
-  background: color-mix(in srgb, var(--home-accent-a, #d0bcff) 24%, #2b2930);
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, var(--home-accent-a, #d0bcff) 21%, #2b2930) 0%,
+      color-mix(in srgb, var(--home-accent-c, #4f378b) 16%, #27242d) 100%
+    );
   border-color: color-mix(in srgb, var(--home-accent-a, #d0bcff) 46%, #6a627f);
+  transform: translateY(-1px);
 }
 
 .theme-tab-active {
@@ -201,6 +230,40 @@ button {
       color-mix(in srgb, var(--home-accent-b, #7d5260) 34%, #e8def8) 100%
     );
   color: #21005d;
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--home-accent-a, #d0bcff) 28%, transparent);
+}
+
+.theme-tab-active::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 7px;
+  height: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--home-accent-c, #4f378b) 62%, #21005d);
+  opacity: 0.8;
+}
+
+@media (max-width: 420px) {
+  .theme-tab {
+    min-height: 2.6rem;
+    font-size: 0.82rem;
+    padding: 0.55rem 0.7rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  .home-tabs-wrap {
+    max-width: 920px;
+    margin-inline: auto;
+    gap: 0.65rem;
+  }
+
+  .theme-tab {
+    min-height: 2.95rem;
+    font-size: 0.95rem;
+  }
 }
 
 /* Home-wide interactive hover tint using dynamic track accents */
