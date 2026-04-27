@@ -26,15 +26,17 @@ function IconButton({
   title,
   onClick,
   primary = false,
+  className = "",
   children
 }: {
   title: string;
   onClick: () => void;
   primary?: boolean;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <button className={primary ? "player-btn-primary" : "player-btn"} onClick={onClick} title={title} aria-label={title}>
+    <button className={`${primary ? "player-btn-primary" : "player-btn"} ${className}`.trim()} onClick={onClick} title={title} aria-label={title}>
       {children}
     </button>
   );
@@ -1241,22 +1243,15 @@ useEffect(() => {
       const el = moreMenuTriggerRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      const isSm = window.matchMedia("(min-width: 640px)").matches;
       const halfW = 71;
       const centerX = Math.max(halfW + 8, Math.min(rect.left + rect.width / 2, window.innerWidth - halfW - 8));
-      if (isSm) {
-        setFullscreenMoreMenuPos({
-          top: rect.bottom + 8,
-          left: centerX,
-          transform: "translateX(-50%)"
-        });
-      } else {
-        setFullscreenMoreMenuPos({
-          top: rect.top - 8,
-          left: centerX,
-          transform: "translate(-50%, -100%)"
-        });
-      }
+      const estimatedMenuHeight = 220;
+      const top = Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - estimatedMenuHeight - 8));
+      setFullscreenMoreMenuPos({
+        top,
+        left: centerX,
+        transform: "translateX(-50%)"
+      });
     };
     update();
     window.addEventListener("resize", update);
@@ -3108,20 +3103,35 @@ useEffect(() => {
           )}
           <div className={`player-overlay-layer absolute inset-0 ${playerViewMode === "visualizer" ? "bg-[#09070b55]" : "bg-[#0d0a1270]"}`} />
 
-          <button
-            className="player-btn absolute right-4 top-4 z-30 px-3 sm:right-5 sm:top-5 md:right-6 md:top-6"
-            aria-label="Vollbildplayer schliessen"
-            onClick={() => {
-              setIsPlayerExpanded(false);
-              setIsLyricsOpen(false);
-              setIsFullscreenMenuOpen(false);
-            }}
-          >
-            <IconBase>
-              <path d="M6 6l12 12" />
-              <path d="M18 6L6 18" />
-            </IconBase>
-          </button>
+          <div className="absolute right-4 top-4 z-30 flex items-center gap-2 sm:right-5 sm:top-5 md:right-6 md:top-6">
+            <button
+              ref={moreMenuTriggerRef}
+              className="player-btn px-3"
+              title="Mehr Optionen"
+              aria-label="Mehr Optionen"
+              onClick={() => setIsFullscreenMenuOpen((v) => !v)}
+            >
+              <IconBase>
+                <circle cx="6" cy="12" r="1.6" />
+                <circle cx="12" cy="12" r="1.6" />
+                <circle cx="18" cy="12" r="1.6" />
+              </IconBase>
+            </button>
+            <button
+              className="player-btn px-3"
+              aria-label="Vollbildplayer schliessen"
+              onClick={() => {
+                setIsPlayerExpanded(false);
+                setIsLyricsOpen(false);
+                setIsFullscreenMenuOpen(false);
+              }}
+            >
+              <IconBase>
+                <path d="M6 6l12 12" />
+                <path d="M18 6L6 18" />
+              </IconBase>
+            </button>
+          </div>
 
           <div className="relative z-10 mx-auto grid h-full max-w-6xl grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-y-auto px-3 pb-[calc(1.85rem+env(safe-area-inset-bottom))] pt-[72px] min-[560px]:grid-cols-[minmax(160px,240px)_1fr] min-[560px]:grid-rows-1 min-[560px]:items-center min-[560px]:gap-4 min-[560px]:overflow-hidden min-[560px]:px-3 min-[560px]:pb-3 min-[560px]:pt-[80px] md:gap-5 md:px-4 md:pb-4 md:pt-[88px] lg:grid-cols-[minmax(220px,320px)_1fr] lg:gap-8 lg:p-8">
             <section className="self-start flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/15 bg-white/5 p-3 backdrop-blur-2xl min-[560px]:self-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:rounded-[28px] md:p-3.5 lg:p-4">
@@ -3147,7 +3157,7 @@ useEffect(() => {
               </div>
             </section>
 
-            <section className="relative -translate-y-1 mb-[calc(1.25rem+env(safe-area-inset-bottom))] flex min-h-0 flex-col rounded-[24px] border border-white/15 bg-white/5 p-3 pb-[calc(1.35rem+env(safe-area-inset-bottom))] backdrop-blur-2xl min-[560px]:mb-0 min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
+            <section className="relative -translate-y-1 mb-[calc(2rem+env(safe-area-inset-bottom))] flex min-h-0 flex-col rounded-[24px] border border-white/15 bg-white/5 p-3 pb-[calc(1.35rem+env(safe-area-inset-bottom))] backdrop-blur-2xl min-[560px]:mb-0 min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
               <div className="flex h-full min-h-0 flex-col gap-2.5 md:gap-3">
               <div className="flex min-h-0 flex-1 flex-col gap-1.5 min-[560px]:gap-2">
                 <div
@@ -3189,29 +3199,31 @@ useEffect(() => {
                 </div>
               </div>
 
-              <div className="relative flex flex-wrap items-center justify-center gap-1.5 pb-1 min-[560px]:gap-2 min-[560px]:pb-0">
-                <button
-                  type="button"
-                  className={`fullscreen-inline-toggle ${
-                    queueUiState.shuffle ? "fullscreen-inline-toggle-active fullscreen-inline-toggle-shuffle-on" : ""
-                  }`}
-                  title={queueUiState.shuffle ? "Shuffle an" : "Shuffle aus"}
-                  aria-label={queueUiState.shuffle ? "Shuffle an" : "Shuffle aus"}
-                  onClick={toggleShuffleMode}
-                >
-                  <IconBase>
-                    <path d="M3 7h3a4 4 0 0 1 3.2 1.6l5.6 6.8A4 4 0 0 0 18 17h3" />
-                    <path d="M21 7h-3a4 4 0 0 0-3.2 1.6l-1 1.2" />
-                    <path d="M3 17h3a4 4 0 0 0 3.2-1.6l1-1.2" />
-                  </IconBase>
-                </button>
-                <IconButton title="Previous" onClick={previous}>
-                  <IconBase>
-                    <path d="M6 6v12" />
-                    <path d="M9 12l9 6V6z" />
-                  </IconBase>
-                </IconButton>
-                <IconButton title="Play/Pause" onClick={() => (isPlaying ? pause() : resumePlayback())} primary>
+              <div className="relative grid grid-cols-[1fr_auto_1fr] items-center gap-2 pb-1 min-[560px]:pb-0">
+                <div className="flex items-center justify-end gap-1.5 min-[560px]:gap-2">
+                  <button
+                    type="button"
+                    className={`fullscreen-inline-toggle ${
+                      queueUiState.shuffle ? "fullscreen-inline-toggle-active fullscreen-inline-toggle-shuffle-on" : ""
+                    }`}
+                    title={queueUiState.shuffle ? "Shuffle an" : "Shuffle aus"}
+                    aria-label={queueUiState.shuffle ? "Shuffle an" : "Shuffle aus"}
+                    onClick={toggleShuffleMode}
+                  >
+                    <IconBase>
+                      <path d="M3 7h3a4 4 0 0 1 3.2 1.6l5.6 6.8A4 4 0 0 0 18 17h3" />
+                      <path d="M21 7h-3a4 4 0 0 0-3.2 1.6l-1 1.2" />
+                      <path d="M3 17h3a4 4 0 0 0 3.2-1.6l1-1.2" />
+                    </IconBase>
+                  </button>
+                  <IconButton title="Previous" onClick={previous}>
+                    <IconBase>
+                      <path d="M6 6v12" />
+                      <path d="M9 12l9 6V6z" />
+                    </IconBase>
+                  </IconButton>
+                </div>
+                <IconButton title="Play/Pause" onClick={() => (isPlaying ? pause() : resumePlayback())} primary className="!h-14 !min-w-14 justify-self-center min-[560px]:!h-[46px] min-[560px]:!min-w-[46px]">
                   {isPlaying ? (
                     <IconBase>
                       <path d="M8 6v12" />
@@ -3223,64 +3235,53 @@ useEffect(() => {
                     </IconBase>
                   )}
                 </IconButton>
-                <IconButton title="Next" onClick={next}>
-                  <IconBase>
-                    <path d="M18 6v12" />
-                    <path d="M15 12L6 6v12z" />
-                  </IconBase>
-                </IconButton>
-                <button
-                  type="button"
-                  className={`fullscreen-inline-toggle ${
-                    queueUiState.repeatMode !== "off" ? "fullscreen-inline-toggle-active" : ""
-                  } ${
-                    queueUiState.repeatMode === "all"
-                      ? "fullscreen-inline-toggle-repeat-all"
-                      : queueUiState.repeatMode === "one"
-                        ? "fullscreen-inline-toggle-repeat-one"
-                        : ""
-                  }`}
-                  title={
-                    queueUiState.repeatMode === "off"
-                      ? "Repeat aus"
-                      : queueUiState.repeatMode === "all"
-                        ? "Repeat alle Titel"
-                        : "Repeat einzelner Titel"
-                  }
-                  aria-label={
-                    queueUiState.repeatMode === "off"
-                      ? "Repeat aus"
-                      : queueUiState.repeatMode === "all"
-                        ? "Repeat alle Titel"
-                        : "Repeat einzelner Titel"
-                  }
-                  onClick={cycleRepeatMode}
-                >
-                  <IconBase>
-                    <path d="M17 1l4 4-4 4" />
-                    <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                    <path d="M7 23l-4-4 4-4" />
-                    <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-                  </IconBase>
-                  {queueUiState.repeatMode === "one" ? <span className="fullscreen-inline-toggle-badge">1</span> : null}
-                </button>
-                <button
-                  ref={moreMenuTriggerRef}
-                  className="player-btn px-3"
-                  title="Mehr Optionen"
-                  aria-label="Mehr Optionen"
-                  onClick={() => setIsFullscreenMenuOpen((v) => !v)}
-                >
-                  <IconBase>
-                    <circle cx="6" cy="12" r="1.6" />
-                    <circle cx="12" cy="12" r="1.6" />
-                    <circle cx="18" cy="12" r="1.6" />
-                  </IconBase>
-                </button>
+                <div className="flex items-center justify-start gap-1.5 min-[560px]:gap-2">
+                  <IconButton title="Next" onClick={next}>
+                    <IconBase>
+                      <path d="M18 6v12" />
+                      <path d="M15 12L6 6v12z" />
+                    </IconBase>
+                  </IconButton>
+                  <button
+                    type="button"
+                    className={`fullscreen-inline-toggle ${
+                      queueUiState.repeatMode !== "off" ? "fullscreen-inline-toggle-active" : ""
+                    } ${
+                      queueUiState.repeatMode === "all"
+                        ? "fullscreen-inline-toggle-repeat-all"
+                        : queueUiState.repeatMode === "one"
+                          ? "fullscreen-inline-toggle-repeat-one"
+                          : ""
+                    }`}
+                    title={
+                      queueUiState.repeatMode === "off"
+                        ? "Repeat aus"
+                        : queueUiState.repeatMode === "all"
+                          ? "Repeat alle Titel"
+                          : "Repeat einzelner Titel"
+                    }
+                    aria-label={
+                      queueUiState.repeatMode === "off"
+                        ? "Repeat aus"
+                        : queueUiState.repeatMode === "all"
+                          ? "Repeat alle Titel"
+                          : "Repeat einzelner Titel"
+                    }
+                    onClick={cycleRepeatMode}
+                  >
+                    <IconBase>
+                      <path d="M17 1l4 4-4 4" />
+                      <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                      <path d="M7 23l-4-4 4-4" />
+                      <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+                    </IconBase>
+                    {queueUiState.repeatMode === "one" ? <span className="fullscreen-inline-toggle-badge">1</span> : null}
+                  </button>
+                </div>
               </div>
               </div>
             </section>
-            <div className="h-[calc(2.1rem+env(safe-area-inset-bottom))] min-[560px]:hidden" aria-hidden />
+            <div className="h-[calc(3.4rem+env(safe-area-inset-bottom))] min-[560px]:hidden" aria-hidden />
           </div>
 
           {isFullscreenMenuOpen && fullscreenMoreMenuPos && typeof document !== "undefined"
