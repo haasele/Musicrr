@@ -897,6 +897,18 @@ export function App() {
   }, [importSession]);
 
   useEffect(() => {
+    if (!isPlayerExpanded) return;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+    };
+  }, [isPlayerExpanded]);
+
+  useEffect(() => {
     if (importSession?.phase !== "done") return;
     const t = window.setTimeout(() => {
       setImportSession(null);
@@ -2211,7 +2223,14 @@ useEffect(() => {
         playbackRetryCountRef.current += 1;
         // Decode glitch recovery: skip a small window around the broken frame.
         const resumeAt = Math.max(0, Math.min((audio.duration || 0) - 0.4, (audio.currentTime || 0) + 1.1));
-        const retrySrc = `${audio.currentSrc.split("?")[0]}?decode_retry=${Date.now()}`;
+        let retrySrc = audio.currentSrc;
+        try {
+          const retryUrl = new URL(audio.currentSrc);
+          retryUrl.searchParams.set("decode_retry", String(Date.now()));
+          retrySrc = retryUrl.toString();
+        } catch {
+          retrySrc = `${audio.currentSrc.split("?")[0]}?decode_retry=${Date.now()}`;
+        }
         audio.src = retrySrc;
         audio.load();
         const handleCanPlay = () => {
@@ -2244,7 +2263,14 @@ useEffect(() => {
         playbackRetryingRef.current = true;
         playbackRetryCountRef.current += 1;
         const resumeAt = Math.max(0, audio.currentTime || 0);
-        const retrySrc = `${audio.currentSrc.split("?")[0]}?retry=${Date.now()}`;
+        let retrySrc = audio.currentSrc;
+        try {
+          const retryUrl = new URL(audio.currentSrc);
+          retryUrl.searchParams.set("retry", String(Date.now()));
+          retrySrc = retryUrl.toString();
+        } catch {
+          retrySrc = `${audio.currentSrc.split("?")[0]}?retry=${Date.now()}`;
+        }
         audio.src = retrySrc;
         audio.load();
         const handleLoaded = () => {
@@ -3420,7 +3446,7 @@ useEffect(() => {
                 </div>
               </div>
 
-              <div className="h-8 min-[560px]:hidden" aria-hidden />
+              <div className="h-12 min-[560px]:hidden" aria-hidden />
               <div className="relative mt-2 grid w-full min-w-0 max-w-full grid-cols-[1fr_auto_1fr] items-center gap-2 pb-1 min-[560px]:mt-0 min-[560px]:pb-0">
                 <div className="flex items-center justify-end gap-1.5 min-[560px]:gap-2">
                   <button
