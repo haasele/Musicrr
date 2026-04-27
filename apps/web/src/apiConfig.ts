@@ -1,13 +1,14 @@
 const raw = (import.meta.env.VITE_API_ORIGIN as string | undefined)?.trim() ?? "";
+const API_PROXY_PREFIX = "/api";
 
 export function getApiHttpBase(): string {
   if (raw) {
     return raw.replace(/\/$/, "");
   }
   if (typeof window === "undefined") {
-    return "http://localhost:3001";
+    return "http://musicrr-api:3001";
   }
-  return `${window.location.protocol}//${window.location.hostname}:3001`;
+  return API_PROXY_PREFIX;
 }
 
 export function getApiWsBase(): string {
@@ -21,9 +22,9 @@ export function getApiWsBase(): string {
     }
   }
   if (typeof window === "undefined") {
-    return "ws://localhost:3001";
+    return "ws://musicrr-api:3001";
   }
-  return `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.hostname}:3001`;
+  return `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`;
 }
 
 export function apiUrl(path: string): string {

@@ -13,6 +13,18 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
-    allowedHosts: ["musicrr.haasele.dev", ".haasele.dev"]
+    allowedHosts: ["musicrr.haasele.dev", ".haasele.dev"],
+    proxy: {
+      "/api": {
+        target: "http://musicrr-api:3001",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, "")
+      },
+      "/events": {
+        target: "ws://musicrr-api:3001",
+        ws: true,
+        changeOrigin: true
+      }
+    }
   }
 });
