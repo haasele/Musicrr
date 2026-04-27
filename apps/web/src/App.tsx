@@ -2499,9 +2499,9 @@ useEffect(() => {
               </button>
             </div>
           ) : null}
-          <div className="mb-4 grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-start sm:gap-2 sm:overflow-x-visible sm:pb-1">
+          <div className="mb-4 grid grid-cols-4 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-start sm:gap-2 sm:overflow-x-visible sm:pb-1">
             <input
-              className="col-span-3 h-10 w-full min-w-0 rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff] sm:w-[min(56vw,560px)]"
+              className="col-span-4 h-10 w-full min-w-0 rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff] sm:w-[min(56vw,560px)]"
               value={query}
               onChange={(e) => searchTracks(e.target.value)}
               placeholder="Suche nach Track, Artist, Album"
