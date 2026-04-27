@@ -216,7 +216,7 @@ function CoverArtSlot({
     <div
       className={`relative shrink-0 overflow-hidden bg-gradient-to-br from-[#3b3550] via-[#2a2435] to-[#1a1620] text-[#b8a8c8] ${className}`}
     >
-      {hasCover ? <img src={coverUrl} alt="" className="absolute inset-0 h-full w-full object-cover" /> : null}
+      {hasCover ? <img key={coverUrl} src={coverUrl} alt="" className="absolute inset-0 h-full w-full object-cover" /> : null}
       {!hasCover ? (
         <div className="absolute inset-0 flex items-center justify-center text-xs font-bold tabular-nums" title={label}>
           {initial}
@@ -227,7 +227,11 @@ function CoverArtSlot({
 }
 
 function trackCoverMediaPath(track: Pick<Track, "id" | "cover_path">): string {
-  const rev = encodeURIComponent(track.cover_path ?? track.id);
+  const coverFile = (track.cover_path ?? "")
+    .split(/[\\/]/)
+    .filter(Boolean)
+    .pop();
+  const rev = encodeURIComponent(coverFile ?? track.id);
   return `/media/track/${track.id}/cover?rev=${rev}`;
 }
 
@@ -1099,7 +1103,12 @@ useEffect(() => {
     [themeAccentA, themeAccentB, themeAccentC]
   );
 
-  const activeTrack = sortedTracks[currentTrackIndex];
+  const activeQueueTrackId = queueUiState.trackIds[queueUiState.currentIndex] ?? null;
+  const activeTrack =
+    (activeQueueTrackId
+      ? sortedTracks.find((track) => track.id === activeQueueTrackId) ?? tracks.find((track) => track.id === activeQueueTrackId)
+      : null) ??
+    sortedTracks[currentTrackIndex];
   const upcomingTracks = useMemo(() => {
     if (queueUiState.trackIds.length === 0) return [] as Track[];
     const byId = new Map(sortedTracks.map((track) => [track.id, track] as const));
