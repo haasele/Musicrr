@@ -3129,10 +3129,10 @@ useEffect(() => {
       ) : null}
 
       <footer
-        className="home-theme-footer fixed inset-x-0 bottom-0 z-30 rounded-t-[20px] border border-white/15 p-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl sm:inset-x-4 sm:bottom-4 sm:rounded-[24px] sm:p-3 md:inset-x-6"
+        className="home-theme-footer fixed inset-x-0 bottom-0 z-30 overflow-x-hidden rounded-t-[20px] border border-white/15 p-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl sm:inset-x-4 sm:bottom-4 sm:rounded-[24px] sm:p-3 md:inset-x-6"
         style={homeThemeVars}
       >
-        <div className="grid gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-center">
+        <div className="grid min-w-0 gap-2 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
           <button
             type="button"
             className="flex w-full min-w-0 items-center gap-3 py-1 text-left"
@@ -3152,7 +3152,7 @@ useEffect(() => {
             </div>
           </button>
 
-          <div className="space-y-1 md:min-w-0">
+          <div className="min-w-0 space-y-1 md:min-w-0">
             <div
               ref={homeProgressRef}
               role="slider"
@@ -3215,7 +3215,7 @@ useEffect(() => {
             </div>
           </div>
 
-          <div className="flex w-full max-w-full flex-wrap items-center justify-center gap-2 overflow-x-auto md:justify-end">
+          <div className="flex w-full min-w-0 max-w-full flex-wrap items-center justify-center gap-2 md:justify-end">
             <IconButton title="Previous" onClick={previous}>
               <IconBase>
                 <path d="M6 6v12" />
