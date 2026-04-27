@@ -2543,7 +2543,7 @@ useEffect(() => {
               </button>
             </div>
           ) : null}
-          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2 sm:pb-1">
+          <div className="mb-4 mx-auto w-full max-w-4xl flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2 sm:pb-1">
             <input
               className="h-10 w-full min-w-0 rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff] sm:flex-1"
               value={query}
@@ -3464,8 +3464,8 @@ useEffect(() => {
                 </div>
               </div>
 
-              <div className="h-1 min-[560px]:hidden" aria-hidden />
-              <div className="relative mt-2 grid w-full min-w-0 max-w-full grid-cols-[1fr_auto_1fr] items-center gap-2 pb-1 min-[560px]:mt-0 min-[560px]:pb-0">
+              <div className="h-8 min-[560px]:hidden" aria-hidden />
+              <div className="relative mt-4 grid w-full min-w-0 max-w-full grid-cols-[1fr_auto_1fr] items-center gap-2 pb-2 min-[560px]:mt-0 min-[560px]:pb-0">
                 <div className="flex items-center justify-end gap-1.5 min-[560px]:gap-2">
                   <button
                     type="button"
