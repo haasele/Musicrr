@@ -1,9 +1,29 @@
 const raw = (import.meta.env.VITE_API_ORIGIN as string | undefined)?.trim() ?? "";
 const API_PROXY_PREFIX = "/api";
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+function getConfiguredOrigin(): string {
+  if (!raw) return "";
+  try {
+    const configured = new URL(raw);
+    if (typeof window !== "undefined") {
+      const pageHost = window.location.hostname.toLowerCase();
+      const configuredHost = configured.hostname.toLowerCase();
+      const pageIsLoopback = LOOPBACK_HOSTS.has(pageHost);
+      const configuredIsLoopback = LOOPBACK_HOSTS.has(configuredHost);
+      // Prevent accidental localhost API targets on public domains (blocked by browser extensions / mismatch).
+      if (configuredIsLoopback && !pageIsLoopback) return "";
+    }
+    return configured.origin;
+  } catch {
+    return "";
+  }
+}
 
 export function getApiHttpBase(): string {
-  if (raw) {
-    return raw.replace(/\/$/, "");
+  const configuredOrigin = getConfiguredOrigin();
+  if (configuredOrigin) {
+    return configuredOrigin;
   }
   if (typeof window === "undefined") {
     return "http://musicrr-api:3001";
@@ -12,9 +32,10 @@ export function getApiHttpBase(): string {
 }
 
 export function getApiWsBase(): string {
-  if (raw) {
+  const configuredOrigin = getConfiguredOrigin();
+  if (configuredOrigin) {
     try {
-      const u = new URL(raw);
+      const u = new URL(configuredOrigin);
       u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
       return u.origin;
     } catch {
