@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.music.platform",
   "build": {
-    "beforeDevCommand": "bun --cwd ../web run dev",
-    "beforeBuildCommand": "bun --cwd ../web run build",
-    "frontendDist": "../web/dist",
+    "beforeDevCommand": "bun run --cwd ../web dev",
+    "beforeBuildCommand": "VITE_API_ORIGIN=https://musicrr.haasele.dev/api bun run --cwd ../web build",
+    "frontendDist": "../../web/dist",
     "devUrl": "http://localhost:3000"
   },
   "app": {

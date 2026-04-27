@@ -75,7 +75,7 @@ services:
       VISUAL_PRESETS_DIR: /app/visual
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3001}
       # Browsers send Origin: <web UI URL> — e.g. https://YOUR_PUBLIC_IP:9443, not the API port 3001
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost:9443,https://127.0.0.1:9443}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost:9443,https://127.0.0.1:9443,tauri://localhost,http://tauri.localhost,https://tauri.localhost}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-now-please}
       ADMIN_NAME: ${ADMIN_NAME:-Musicrr Admin}

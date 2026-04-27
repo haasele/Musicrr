@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import { AppShell, NeonLoader } from "@music/ui";
 import { PlayerQueue } from "@music/core";
-import { apiFetch, apiUrl, getApiWsBase, mediaUrl } from "./apiConfig";
+import { apiFetch, apiUrl, getApiHttpBase, getApiWsBase, mediaUrl } from "./apiConfig";
 import { MilkEngine } from "./visualizer/MilkEngine";
 
 type Track = {
@@ -1348,8 +1348,11 @@ useEffect(() => {
       localStorage.setItem("email", email);
       localStorage.setItem("isAdmin", String(Boolean(data.isAdmin)));
       setAuthMessage("Login erfolgreich.");
-    } catch {
-      setAuthMessage("API nicht erreichbar. Bitte zuerst 'bun run dev:api' starten.");
+    } catch (err) {
+      const details = err instanceof Error && err.message ? ` (${err.message})` : "";
+      setAuthMessage(
+        `API nicht erreichbar (${getApiHttpBase()})${details}. Bitte API/CORS prüfen (bei Tauri: Origin tauri://localhost erlauben).`
+      );
     } finally {
       setLoading(false);
     }
