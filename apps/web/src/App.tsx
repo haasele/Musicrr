@@ -3278,7 +3278,7 @@ useEffect(() => {
 
       {isPlayerExpanded && (
         <div
-          className="player-morph-shell fixed inset-0 z-[180] overflow-x-hidden overflow-y-hidden bg-[#0d0a12]"
+          className="player-morph-shell fixed inset-0 z-[180] overflow-x-hidden overflow-y-hidden overscroll-none bg-[#0d0a12]"
           style={
             {
               "--accent-a": accentA,
@@ -3352,7 +3352,7 @@ useEffect(() => {
             </button>
           </div>
 
-          <div className="relative z-10 mx-auto grid h-full min-w-0 max-w-6xl grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-x-hidden overflow-y-hidden px-3 pb-3 pt-[72px] min-[560px]:grid-cols-[minmax(160px,240px)_1fr] min-[560px]:grid-rows-1 min-[560px]:items-center min-[560px]:gap-4 min-[560px]:overflow-hidden min-[560px]:px-3 min-[560px]:pb-3 min-[560px]:pt-[80px] md:gap-5 md:px-4 md:pb-4 md:pt-[88px] lg:grid-cols-[minmax(220px,320px)_1fr] lg:gap-8 lg:p-8">
+          <div className="relative z-10 mx-auto grid h-full min-w-0 max-w-6xl grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-x-hidden overflow-y-hidden overscroll-none px-3 pb-3 pt-[72px] min-[560px]:grid-cols-[minmax(160px,240px)_1fr] min-[560px]:grid-rows-1 min-[560px]:items-center min-[560px]:gap-4 min-[560px]:overflow-hidden min-[560px]:px-3 min-[560px]:pb-3 min-[560px]:pt-[80px] md:gap-5 md:px-4 md:pb-4 md:pt-[88px] lg:grid-cols-[minmax(220px,320px)_1fr] lg:gap-8 lg:p-8">
             <section className="self-start flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[24px] border border-white/15 bg-white/5 p-3 backdrop-blur-2xl min-[560px]:self-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:rounded-[28px] md:p-3.5 lg:p-4">
               {activeTrack ? (
                 <CoverArtSlot
@@ -3376,7 +3376,7 @@ useEffect(() => {
               </div>
             </section>
 
-            <section className="relative -translate-y-1 mb-0 flex min-h-0 min-w-0 flex-col overflow-x-hidden rounded-[24px] border border-white/15 bg-white/5 p-3 pb-3 backdrop-blur-2xl min-[560px]:mb-0 min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
+            <section className="relative mb-0 flex min-h-0 min-w-0 flex-col overflow-x-hidden rounded-[24px] border border-white/15 bg-white/5 p-3 pb-3 backdrop-blur-2xl min-[560px]:mb-0 min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
               <div className="flex h-full min-h-0 min-w-0 flex-col gap-2.5 md:gap-3">
               <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5 min-[560px]:gap-2">
                 <div
@@ -3420,7 +3420,7 @@ useEffect(() => {
                 </div>
               </div>
 
-              <div className="h-5 min-[560px]:hidden" aria-hidden />
+              <div className="h-8 min-[560px]:hidden" aria-hidden />
               <div className="relative mt-2 grid w-full min-w-0 max-w-full grid-cols-[1fr_auto_1fr] items-center gap-2 pb-1 min-[560px]:mt-0 min-[560px]:pb-0">
                 <div className="flex items-center justify-end gap-1.5 min-[560px]:gap-2">
                   <button
