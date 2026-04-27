@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 const tlsCertPath = process.env.TLS_CERT_PATH?.trim() || "/run/certs/origin-cert.pem";
 const tlsKeyPath = process.env.TLS_KEY_PATH?.trim() || "/run/certs/origin-key.pem";
 const tlsEnabled = process.env.VITE_TLS !== "0";
+const webPort = Number(process.env.VITE_PORT ?? process.env.WEB_HTTPS_PORT ?? "9443");
 
 function getHttpsConfig() {
   if (!tlsEnabled) return undefined;
@@ -29,7 +30,7 @@ export default defineConfig(({ command }) => ({
     }
   },
   server: {
-    port: 3443,
+    port: Number.isFinite(webPort) ? webPort : 9443,
     host: true,
     strictPort: true,
     https: command === "serve" ? getHttpsConfig() : undefined,
