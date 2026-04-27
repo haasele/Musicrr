@@ -1,11 +1,20 @@
 const raw = (import.meta.env.VITE_API_ORIGIN as string | undefined)?.trim() ?? "";
+const tauriRaw = (import.meta.env.VITE_TAURI_API_ORIGIN as string | undefined)?.trim() ?? "";
 const API_PROXY_PREFIX = "/api";
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
+function isTauriRuntime(): boolean {
+  if (typeof window === "undefined") return false;
+  const w = window as Window & { __TAURI__?: unknown };
+  if (w.__TAURI__) return true;
+  return navigator.userAgent.toLowerCase().includes("tauri");
+}
+
 function getConfiguredHttpBase(): string {
-  if (!raw) return "";
+  const effectiveRaw = isTauriRuntime() && tauriRaw ? tauriRaw : raw;
+  if (!effectiveRaw) return "";
   try {
-    const configured = new URL(raw);
+    const configured = new URL(effectiveRaw);
     if (typeof window !== "undefined") {
       const pageHost = window.location.hostname.toLowerCase();
       const configuredHost = configured.hostname.toLowerCase();

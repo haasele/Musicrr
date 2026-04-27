@@ -5,7 +5,7 @@
   "identifier": "com.music.platform",
   "build": {
     "beforeDevCommand": "bun run --cwd ../web dev",
-    "beforeBuildCommand": "VITE_API_ORIGIN=https://musicrr.haasele.dev/api bun run --cwd ../web build",
+    "beforeBuildCommand": "VITE_API_ORIGIN= VITE_TAURI_API_ORIGIN=http://45.83.105.35:3001 bun run --cwd ../web build",
     "frontendDist": "../../web/dist",
     "devUrl": "http://localhost:3000"
   },
