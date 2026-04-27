@@ -900,11 +900,29 @@ export function App() {
     if (!isPlayerExpanded) return;
     const prevBodyOverflow = document.body.style.overflow;
     const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevBodyPosition = document.body.style.position;
+    const prevBodyTop = document.body.style.top;
+    const prevBodyWidth = document.body.style.width;
+    const prevBodyLeft = document.body.style.left;
+    const prevBodyRight = document.body.style.right;
+    const scrollY = window.scrollY;
     document.body.style.overflow = "hidden";
     document.documentElement.style.overflow = "hidden";
+    // Strong mobile lock: prevent viewport bounce/shift while interacting with fullscreen controls.
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = "0";
+    document.body.style.right = "0";
+    document.body.style.width = "100%";
     return () => {
       document.body.style.overflow = prevBodyOverflow;
       document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.position = prevBodyPosition;
+      document.body.style.top = prevBodyTop;
+      document.body.style.width = prevBodyWidth;
+      document.body.style.left = prevBodyLeft;
+      document.body.style.right = prevBodyRight;
+      window.scrollTo(0, scrollY);
     };
   }, [isPlayerExpanded]);
 
@@ -3243,7 +3261,7 @@ useEffect(() => {
             </div>
           </div>
 
-          <div className="mx-auto flex w-full min-w-0 max-w-[420px] flex-wrap items-center justify-center gap-2 md:ml-auto md:mr-0 md:max-w-none md:justify-end">
+          <div className="mx-auto flex w-full min-w-0 max-w-[420px] flex-wrap items-center justify-center gap-2">
             <IconButton title="Previous" onClick={previous}>
               <IconBase>
                 <path d="M6 6v12" />
