@@ -1103,12 +1103,7 @@ useEffect(() => {
     [themeAccentA, themeAccentB, themeAccentC]
   );
 
-  const activeQueueTrackId = queueUiState.trackIds[queueUiState.currentIndex] ?? null;
-  const activeTrack =
-    (activeQueueTrackId
-      ? sortedTracks.find((track) => track.id === activeQueueTrackId) ?? tracks.find((track) => track.id === activeQueueTrackId)
-      : null) ??
-    sortedTracks[currentTrackIndex];
+  const activeTrack = sortedTracks[currentTrackIndex];
   const upcomingTracks = useMemo(() => {
     if (queueUiState.trackIds.length === 0) return [] as Track[];
     const byId = new Map(sortedTracks.map((track) => [track.id, track] as const));
@@ -3220,7 +3215,7 @@ useEffect(() => {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-2 md:justify-end">
+          <div className="flex w-full max-w-full flex-wrap items-center justify-center gap-2 overflow-x-auto md:justify-end">
             <IconButton title="Previous" onClick={previous}>
               <IconBase>
                 <path d="M6 6v12" />
@@ -3423,7 +3418,7 @@ useEffect(() => {
                 </div>
               </div>
 
-              <div className="relative mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2 pb-1 min-[560px]:mt-0 min-[560px]:pb-0">
+              <div className="relative mt-2 grid w-full max-w-full grid-cols-[1fr_auto_1fr] items-center gap-2 overflow-x-auto pb-1 min-[560px]:mt-0 min-[560px]:pb-0">
                 <div className="flex items-center justify-end gap-1.5 min-[560px]:gap-2">
                   <button
                     type="button"
