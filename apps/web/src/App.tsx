@@ -226,6 +226,11 @@ function CoverArtSlot({
   );
 }
 
+function trackCoverMediaPath(track: Pick<Track, "id" | "cover_path">): string {
+  const rev = encodeURIComponent(track.cover_path ?? track.id);
+  return `/media/track/${track.id}/cover?rev=${rev}`;
+}
+
 /** Oben: großes Artwork, Titel, Untertitel (Apple-Music-ähnlich). */
 function LibraryDetailHero({
   title,
@@ -270,7 +275,7 @@ function PlaylistCollageArt({ tracks, murl }: { tracks: Track[]; murl: (path: st
       <CoverArtSlot
         className={`${size} rounded-2xl border border-white/10 shadow-2xl`}
         hasCover={Boolean(source[0].cover_path)}
-        coverUrl={murl(`/media/track/${source[0].id}/cover`)}
+        coverUrl={murl(trackCoverMediaPath(source[0]))}
         label={source[0].title}
       />
     );
@@ -281,7 +286,7 @@ function PlaylistCollageArt({ tracks, murl }: { tracks: Track[]; murl: (path: st
         {source.map((t) => (
           <div key={t.id} className="relative min-h-0 min-w-0">
             {t.cover_path ? (
-              <img src={murl(`/media/track/${t.id}/cover`)} alt="" className="h-full w-full object-cover" />
+              <img src={murl(trackCoverMediaPath(t))} alt="" className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full w-full items-center justify-center bg-[#2a2435] text-lg font-bold text-[#9a92a4]">
                 {t.title.trim().charAt(0).toUpperCase() || "♪"}
@@ -300,7 +305,7 @@ function PlaylistCollageArt({ tracks, murl }: { tracks: Track[]; murl: (path: st
         t ? (
           <div key={t.id} className="relative min-h-0 min-w-0">
             {t.cover_path ? (
-              <img src={murl(`/media/track/${t.id}/cover`)} alt="" className="h-full w-full object-cover" />
+              <img src={murl(trackCoverMediaPath(t))} alt="" className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full w-full items-center justify-center bg-[#1f1b2a] text-sm font-bold text-[#7d7688]">
                 {t.title.trim().charAt(0).toUpperCase() || "♪"}
@@ -335,7 +340,7 @@ function PlaylistListThumb({ tracks, murl }: { tracks: Track[]; murl: (path: str
       <CoverArtSlot
         className="h-12 w-12 shrink-0 rounded-lg border border-white/10"
         hasCover={Boolean(source[0].cover_path)}
-        coverUrl={murl(`/media/track/${source[0].id}/cover`)}
+        coverUrl={murl(trackCoverMediaPath(source[0]))}
         label={source[0].title}
       />
     );
@@ -348,7 +353,7 @@ function PlaylistListThumb({ tracks, murl }: { tracks: Track[]; murl: (path: str
         t ? (
           <div key={t.id} className="relative min-h-0 min-w-0">
             {t.cover_path ? (
-              <img src={murl(`/media/track/${t.id}/cover`)} alt="" className="h-full w-full object-cover" />
+              <img src={murl(trackCoverMediaPath(t))} alt="" className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full w-full items-center justify-center bg-[#25202e] text-[8px] font-bold text-[#7d7688]">
                 {t.title.trim().charAt(0).toUpperCase() || "♪"}
@@ -669,6 +674,7 @@ export function App() {
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const analyserRafRef = useRef<number | null>(null);
+  const waveformRafRef = useRef<number | null>(null);
   const playbackRetryCountRef = useRef(0);
   const playbackRetryingRef = useRef(false);
   const currentTrackMetaRef = useRef<{ id: string; title: string } | null>(null);
@@ -1152,7 +1158,7 @@ useEffect(() => {
     }
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.src = murl(`/media/track/${activeTrack.id}/cover`);
+    img.src = murl(trackCoverMediaPath(activeTrack));
     img.onload = () => {
       const swatch = document.createElement("canvas");
       swatch.width = 32;
@@ -1256,6 +1262,49 @@ useEffect(() => {
   }, [isPlayerExpanded]);
 
   useEffect(() => {
+    if (!isPlaying || !analyserRef.current) {
+      if (waveformRafRef.current) {
+        cancelAnimationFrame(waveformRafRef.current);
+        waveformRafRef.current = null;
+      }
+      return;
+    }
+    const analyser = analyserRef.current;
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const bars = waveformSmoothRef.current.length;
+    const binsPerBar = Math.max(1, Math.floor(data.length / bars));
+    let frameCounter = 0;
+
+    const tick = () => {
+      analyser.getByteFrequencyData(data);
+      frameCounter += 1;
+      if (frameCounter % 3 === 0) {
+        const nextLevels = waveformSmoothRef.current.slice(0, bars);
+        for (let barIdx = 0; barIdx < bars; barIdx += 1) {
+          const start = barIdx * binsPerBar;
+          const end = Math.min(data.length, start + binsPerBar);
+          let localSum = 0;
+          for (let i = start; i < end; i += 1) localSum += data[i];
+          const average = end > start ? localSum / (end - start) : 0;
+          const normalized = clamp(average / 255, 0, 1);
+          const eased = Math.pow(normalized, 0.75);
+          nextLevels[barIdx] = nextLevels[barIdx] + (eased - nextLevels[barIdx]) * 0.36;
+        }
+        waveformSmoothRef.current = nextLevels;
+        setWaveformLevels(nextLevels);
+      }
+      waveformRafRef.current = requestAnimationFrame(tick);
+    };
+    waveformRafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (waveformRafRef.current) {
+        cancelAnimationFrame(waveformRafRef.current);
+        waveformRafRef.current = null;
+      }
+    };
+  }, [isPlaying, currentTrackIndex]);
+
+  useEffect(() => {
     const needsEnergyLoop = isPlayerExpanded && playerViewMode === "gradient" && isBeatReactive && isPlaying;
     if (!needsEnergyLoop) {
       if (analyserRafRef.current) {
@@ -1276,8 +1325,6 @@ useEffect(() => {
     const analyser = analyserRef.current;
     if (!analyser) return;
     const data = new Uint8Array(analyser.frequencyBinCount);
-    const bars = waveformSmoothRef.current.length;
-    const binsPerBar = Math.max(1, Math.floor(data.length / bars));
     let frameCounter = 0;
 
     const tick = () => {
@@ -1288,21 +1335,6 @@ useEffect(() => {
       const target = 0.14 + raw * 0.95;
       energySmoothRef.current += (target - energySmoothRef.current) * 0.08;
       frameCounter += 1;
-      if (frameCounter % 3 === 0) {
-        const nextLevels = waveformSmoothRef.current.slice(0, bars);
-        for (let barIdx = 0; barIdx < bars; barIdx += 1) {
-          const start = barIdx * binsPerBar;
-          const end = Math.min(data.length, start + binsPerBar);
-          let localSum = 0;
-          for (let i = start; i < end; i += 1) localSum += data[i];
-          const average = end > start ? localSum / (end - start) : 0;
-          const normalized = clamp(average / 255, 0, 1);
-          const eased = Math.pow(normalized, 0.75);
-          nextLevels[barIdx] = nextLevels[barIdx] + (eased - nextLevels[barIdx]) * 0.36;
-        }
-        waveformSmoothRef.current = nextLevels;
-        setWaveformLevels(nextLevels);
-      }
       // Keep React updates sparse; this state drives only CSS energy effects.
       if (frameCounter % 4 === 0) {
         setAudioEnergy(clamp(energySmoothRef.current, 0.08, 1));
@@ -2726,7 +2758,7 @@ useEffect(() => {
                       <CoverArtSlot
                         className="h-8 w-8 shrink-0 rounded-md border border-[#4a4458]"
                         hasCover={Boolean(track.cover_path)}
-                        coverUrl={murl(`/media/track/${track.id}/cover`)}
+                        coverUrl={murl(trackCoverMediaPath(track))}
                         label={track.title}
                       />
                       {editingTrackId === track.id ? (
@@ -2810,7 +2842,7 @@ useEffect(() => {
                     <CoverArtSlot
                       className="h-[min(58vw,280px)] w-[min(58vw,280px)] border-2 border-white/15 shadow-2xl sm:h-64 sm:w-64 rounded-full"
                       hasCover={Boolean(detailArtistHeroTrack.cover_path)}
-                      coverUrl={murl(`/media/track/${detailArtistHeroTrack.id}/cover`)}
+                      coverUrl={murl(trackCoverMediaPath(detailArtistHeroTrack))}
                       label={selectedArtist}
                     />
                   ) : (
@@ -2842,7 +2874,7 @@ useEffect(() => {
                   <CoverArtSlot
                     className="h-10 w-10 shrink-0 rounded-full border border-[#4a4458]"
                     hasCover={Boolean(artist.coverTrackId)}
-                    coverUrl={artist.coverTrackId ? murl(`/media/track/${artist.coverTrackId}/cover`) : ""}
+                    coverUrl={artist.coverTrackId ? murl(`/media/track/${artist.coverTrackId}/cover?rev=${encodeURIComponent(artist.coverTrackId)}`) : ""}
                     label={artist.name}
                   />
                   <span className="min-w-0 flex-1 truncate text-left text-sm text-[#f5eff7]">{artist.name}</span>
@@ -2858,7 +2890,7 @@ useEffect(() => {
                     <CoverArtSlot
                       className="h-[min(58vw,280px)] w-[min(58vw,280px)] border-2 border-white/15 shadow-2xl sm:h-64 sm:w-64 rounded-3xl"
                       hasCover={Boolean(detailAlbumHeroTrack.cover_path)}
-                      coverUrl={murl(`/media/track/${detailAlbumHeroTrack.id}/cover`)}
+                      coverUrl={murl(trackCoverMediaPath(detailAlbumHeroTrack))}
                       label={selectedAlbum}
                     />
                   ) : (
@@ -2890,7 +2922,7 @@ useEffect(() => {
                   <CoverArtSlot
                     className="h-10 w-10 shrink-0 rounded-lg border border-[#4a4458]"
                     hasCover={Boolean(album.coverTrackId)}
-                    coverUrl={album.coverTrackId ? murl(`/media/track/${album.coverTrackId}/cover`) : ""}
+                    coverUrl={album.coverTrackId ? murl(`/media/track/${album.coverTrackId}/cover?rev=${encodeURIComponent(album.coverTrackId)}`) : ""}
                     label={album.name}
                   />
                   <span className="min-w-0 flex-1 truncate text-left text-sm text-[#f5eff7]">{album.name}</span>
@@ -3078,7 +3110,7 @@ useEffect(() => {
                   <CoverArtSlot
                     className="h-10 w-10 shrink-0 rounded-lg border border-white/15"
                     hasCover={Boolean(track.cover_path)}
-                    coverUrl={murl(`/media/track/${track.id}/cover`)}
+                    coverUrl={murl(trackCoverMediaPath(track))}
                     label={track.title}
                   />
                   <span className="min-w-0 flex-1">
@@ -3106,7 +3138,7 @@ useEffect(() => {
               <CoverArtSlot
                 className={`h-11 w-11 shrink-0 rounded-xl border border-[#4a4458] sm:h-14 sm:w-14 sm:rounded-2xl ${isPlaying ? "animate-pulse" : ""}`}
                 hasCover={Boolean(activeTrack.cover_path)}
-                coverUrl={murl(`/media/track/${activeTrack.id}/cover`)}
+                coverUrl={murl(trackCoverMediaPath(activeTrack))}
                 label={activeTrack.title}
               />
             ) : null}
@@ -3320,7 +3352,7 @@ useEffect(() => {
                 <CoverArtSlot
                   className="mx-auto aspect-square w-full max-w-full max-h-[calc(100%-5.75rem)] rounded-[20px] border border-[#8f7ec555] shadow-2xl"
                   hasCover={Boolean(activeTrack.cover_path)}
-                  coverUrl={murl(`/media/track/${activeTrack.id}/cover`)}
+                  coverUrl={murl(trackCoverMediaPath(activeTrack))}
                   label={activeTrack.title}
                 />
               ) : null}
