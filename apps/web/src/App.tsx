@@ -2949,7 +2949,7 @@ useEffect(() => {
               aria-valuemin={0}
               aria-valuemax={Math.floor(duration > 0 ? duration : (activeTrack?.duration_sec ?? 0))}
               aria-valuenow={Math.floor(currentTime)}
-                    className="relative h-10 w-full cursor-pointer select-none overflow-hidden rounded-2xl border border-[#4a4458] bg-[#1f1b24] px-2 py-1 sm:h-11"
+              className="home-progress relative h-10 w-full cursor-pointer select-none overflow-hidden rounded-2xl border border-[#4a4458] bg-[#1f1b24] px-2 py-1 sm:h-11"
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 const ratio = (e.clientX - rect.left) / rect.width;
@@ -2977,7 +2977,7 @@ useEffect(() => {
                       el.addEventListener("pointercancel", onUp);
               }}
             >
-              <div className="absolute inset-y-0 left-0 rounded-r-xl bg-gradient-to-r from-[#d0bcff2b] to-[#7d526033]" style={{ width: `${progressRatio * 100}%` }} />
+              <div className="home-progress-fill absolute inset-y-0 left-0 rounded-r-xl" style={{ width: `${progressRatio * 100}%` }} />
               <div className="grid h-full grid-flow-col auto-cols-fr items-end gap-[2px]">
                 {waveBars.map((bar) => {
                   const barRatio = bar / (waveBars.length - 1);

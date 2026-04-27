@@ -235,6 +235,34 @@ button {
     );
 }
 
+.home-theme-footer .home-progress {
+  border-color: color-mix(in srgb, var(--home-accent-a, #d0bcff) 32%, #4a4458);
+  background: color-mix(in srgb, var(--home-accent-c, #4f378b) 14%, #1f1b24);
+}
+
+.home-theme-footer .home-progress-fill {
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--home-accent-a, #d0bcff) 32%, transparent),
+      color-mix(in srgb, var(--home-accent-b, #7d5260) 28%, transparent)
+    );
+}
+
+.home-theme-footer .wave-passed {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--home-accent-a, #d0bcff) 86%, #ffffff),
+    color-mix(in srgb, var(--home-accent-b, #7d5260) 62%, var(--home-accent-a, #d0bcff))
+  );
+  opacity: 1;
+}
+
+.home-theme-footer .wave-pending {
+  background: color-mix(in srgb, var(--home-accent-c, #4f378b) 42%, #4a4458);
+  opacity: 0.76;
+}
+
 .wave-bar {
   border-radius: 999px;
   transform-origin: bottom center;
