@@ -897,24 +897,6 @@ export function App() {
   }, [importSession]);
 
   useEffect(() => {
-    if (!isPlayerExpanded) return;
-    const prevBodyOverflow = document.body.style.overflow;
-    const prevHtmlOverflow = document.documentElement.style.overflow;
-    const prevBodyOverscroll = document.body.style.overscrollBehavior;
-    const prevHtmlOverscroll = document.documentElement.style.overscrollBehavior;
-    document.body.style.overflow = "hidden";
-    document.documentElement.style.overflow = "hidden";
-    document.body.style.overscrollBehavior = "none";
-    document.documentElement.style.overscrollBehavior = "none";
-    return () => {
-      document.body.style.overflow = prevBodyOverflow;
-      document.documentElement.style.overflow = prevHtmlOverflow;
-      document.body.style.overscrollBehavior = prevBodyOverscroll;
-      document.documentElement.style.overscrollBehavior = prevHtmlOverscroll;
-    };
-  }, [isPlayerExpanded]);
-
-  useEffect(() => {
     if (importSession?.phase !== "done") return;
     const t = window.setTimeout(() => {
       setImportSession(null);
@@ -3438,7 +3420,8 @@ useEffect(() => {
                 </div>
               </div>
 
-              <div className="relative mt-2 grid w-full min-w-0 max-w-full grid-cols-[1fr_auto_1fr] items-center gap-2 pb-1 pt-8 min-[560px]:mt-0 min-[560px]:pb-0 min-[560px]:pt-0">
+              <div className="h-8 min-[560px]:hidden" aria-hidden />
+              <div className="relative mt-2 grid w-full min-w-0 max-w-full grid-cols-[1fr_auto_1fr] items-center gap-2 pb-1 min-[560px]:mt-0 min-[560px]:pb-0">
                 <div className="flex items-center justify-end gap-1.5 min-[560px]:gap-2">
                   <button
                     type="button"
