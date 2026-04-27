@@ -2543,15 +2543,15 @@ useEffect(() => {
               </button>
             </div>
           ) : null}
-          <div className="mb-4 grid grid-cols-4 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-2 sm:pb-1">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2 sm:pb-1">
             <input
-              className="col-span-4 mx-auto h-10 w-full min-w-0 max-w-[560px] rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff] sm:col-auto sm:mx-0 sm:max-w-none"
+              className="h-10 w-full min-w-0 rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff] sm:flex-1"
               value={query}
               onChange={(e) => searchTracks(e.target.value)}
               placeholder="Suche nach Track, Artist, Album"
             />
 
-            <div className="col-span-4 flex items-center justify-center gap-2 sm:col-auto sm:justify-end">
+            <div className="flex items-center justify-center gap-2 sm:justify-end sm:shrink-0">
             <div className="relative">
               <button
                 className={`panel-icon-btn h-10 min-w-10 px-0 sm:h-auto sm:min-w-[40px] sm:px-[10px] ${isEditMode ? "panel-icon-btn-active" : ""}`}
