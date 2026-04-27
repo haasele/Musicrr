@@ -2585,7 +2585,7 @@ useEffect(() => {
                   className={`track-row flex items-stretch gap-2 rounded-2xl border px-2 py-2 transition sm:gap-3 sm:px-3 ${
                     selectedTrackIds.includes(track.id) && isEditMode
                       ? "border-[#d0bcff] bg-[#3a314b]"
-                      : "home-accent-item border-[#4a4458] bg-[#2b2930]"
+                      : "home-accent-item"
                   }`}
                 >
                   {isEditMode ? (
@@ -2725,7 +2725,7 @@ useEffect(() => {
                 <button
                   key={artist.name}
                   type="button"
-                  className="home-accent-item mx-auto flex w-full min-h-11 max-w-3xl items-center gap-3 rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-left hover:bg-[#36303e]"
+                  className="home-accent-item mx-auto flex w-full min-h-11 max-w-3xl items-center gap-3 rounded-xl border px-3 py-2 text-left hover:bg-[#36303e]"
                   onClick={() => openArtistPage(artist.name)}
                 >
                   <CoverArtSlot
@@ -2773,7 +2773,7 @@ useEffect(() => {
                 <button
                   key={album.name}
                   type="button"
-                  className="home-accent-item mx-auto flex w-full min-h-11 max-w-3xl items-center gap-3 rounded-xl border border-[#4a4458] bg-[#2b2930] px-3 py-2 text-left hover:bg-[#36303e]"
+                  className="home-accent-item mx-auto flex w-full min-h-11 max-w-3xl items-center gap-3 rounded-xl border px-3 py-2 text-left hover:bg-[#36303e]"
                   onClick={() => openAlbumPage(album.name)}
                 >
                   <CoverArtSlot
@@ -2813,7 +2813,7 @@ useEffect(() => {
 
                   <button
                     type="button"
-                    className="home-accent-item-strong flex w-full min-h-11 items-center justify-between gap-2 rounded-2xl border border-[#d0bcff]/40 bg-[#322846] p-3 text-left transition hover:bg-[#3d3254]"
+                    className="home-accent-item-strong flex w-full min-h-11 items-center justify-between gap-2 rounded-2xl border p-3 text-left transition hover:bg-[#3d3254]"
                     onClick={() => setOpenPlaylist("favorites")}
                   >
                     <span className="flex min-w-0 items-center gap-3">
@@ -2829,7 +2829,7 @@ useEffect(() => {
                   {playlists.map((playlist) => (
                     <div
                       key={playlist.id}
-                      className="home-accent-item flex items-center justify-between gap-2 rounded-2xl border border-[#4a4458] bg-[#2b2930] p-3 text-[#f5eff7]"
+                      className="home-accent-item flex items-center justify-between gap-2 rounded-2xl border p-3 text-[#f5eff7]"
                     >
                       <button
                         type="button"
