@@ -219,6 +219,22 @@ button {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--home-accent-a, #d0bcff) 22%, transparent) inset;
 }
 
+/* Default accent surfaces for Home library list items (also when not hovered). */
+.home-theme-panel .home-accent-item {
+  border-color: color-mix(in srgb, var(--home-accent-a, #d0bcff) 26%, #4a4458);
+  background: color-mix(in srgb, var(--home-accent-c, #4f378b) 12%, #2b2930);
+}
+
+.home-theme-panel .home-accent-item-strong {
+  border-color: color-mix(in srgb, var(--home-accent-a, #d0bcff) 38%, #5f5772);
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, var(--home-accent-a, #d0bcff) 20%, #2f2940) 0%,
+      color-mix(in srgb, var(--home-accent-c, #4f378b) 17%, #2b2635) 100%
+    );
+}
+
 .wave-bar {
   border-radius: 999px;
   transform-origin: bottom center;
