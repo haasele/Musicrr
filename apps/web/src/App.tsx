@@ -3147,7 +3147,7 @@ useEffect(() => {
               </div>
             </section>
 
-            <section className="relative -translate-y-1 mb-[calc(0.75rem+env(safe-area-inset-bottom))] flex min-h-0 flex-col rounded-[24px] border border-white/15 bg-white/5 p-3 pb-[calc(1.35rem+env(safe-area-inset-bottom))] backdrop-blur-2xl min-[560px]:mb-0 min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
+            <section className="relative -translate-y-1 mb-[calc(1.25rem+env(safe-area-inset-bottom))] flex min-h-0 flex-col rounded-[24px] border border-white/15 bg-white/5 p-3 pb-[calc(1.35rem+env(safe-area-inset-bottom))] backdrop-blur-2xl min-[560px]:mb-0 min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
               <div className="flex h-full min-h-0 flex-col gap-2.5 md:gap-3">
               <div className="flex min-h-0 flex-1 flex-col gap-1.5 min-[560px]:gap-2">
                 <div
@@ -3280,7 +3280,7 @@ useEffect(() => {
               </div>
               </div>
             </section>
-            <div className="h-[calc(1.1rem+env(safe-area-inset-bottom))] min-[560px]:hidden" aria-hidden />
+            <div className="h-[calc(2.1rem+env(safe-area-inset-bottom))] min-[560px]:hidden" aria-hidden />
           </div>
 
           {isFullscreenMenuOpen && fullscreenMoreMenuPos && typeof document !== "undefined"
