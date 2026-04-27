@@ -13,7 +13,6 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
-    https: {},
-    allowedHosts: ["musicrr.haasele.dev"]
+    allowedHosts: ["musicrr.haasele.dev", ".haasele.dev"]
   }
 });
