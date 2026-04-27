@@ -233,16 +233,16 @@ button {
   box-shadow: 0 8px 22px color-mix(in srgb, var(--home-accent-a, #d0bcff) 28%, transparent);
 }
 
-.theme-tab-active::after {
-  content: "";
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 7px;
-  height: 2px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--home-accent-c, #4f378b) 62%, #21005d);
-  opacity: 0.8;
+.theme-tab-active:hover {
+  border-color: color-mix(in srgb, var(--home-accent-a, #d0bcff) 68%, #ffffff);
+  background:
+    linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--home-accent-a, #d0bcff) 58%, #f5eff7) 0%,
+      color-mix(in srgb, var(--home-accent-b, #7d5260) 36%, #e8def8) 100%
+    );
+  color: #21005d;
+  transform: none;
 }
 
 @media (max-width: 420px) {

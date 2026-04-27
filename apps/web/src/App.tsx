@@ -1257,7 +1257,7 @@ useEffect(() => {
 
   useEffect(() => {
     const needsEnergyLoop = isPlayerExpanded && playerViewMode === "gradient" && isBeatReactive && isPlaying;
-    if (!isPlaying) {
+    if (!needsEnergyLoop) {
       if (analyserRafRef.current) {
         cancelAnimationFrame(analyserRafRef.current);
         analyserRafRef.current = null;
@@ -1304,7 +1304,7 @@ useEffect(() => {
         setWaveformLevels(nextLevels);
       }
       // Keep React updates sparse; this state drives only CSS energy effects.
-      if (needsEnergyLoop && frameCounter % 4 === 0) {
+      if (frameCounter % 4 === 0) {
         setAudioEnergy(clamp(energySmoothRef.current, 0.08, 1));
       }
       analyserRafRef.current = requestAnimationFrame(tick);
@@ -2463,9 +2463,9 @@ useEffect(() => {
               </button>
             </div>
           ) : null}
-          <div className="mb-4 grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:overflow-x-visible sm:pb-1">
+          <div className="mb-4 grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-start sm:gap-2 sm:overflow-x-visible sm:pb-1">
             <input
-              className="col-span-3 w-full min-w-0 flex-1 rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 py-2 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff] sm:min-w-[220px]"
+              className="col-span-3 h-10 w-full min-w-0 rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff] sm:w-[min(56vw,560px)]"
               value={query}
               onChange={(e) => searchTracks(e.target.value)}
               placeholder="Suche nach Track, Artist, Album"
@@ -2496,7 +2496,7 @@ useEffect(() => {
               <button
                 ref={importMenuTriggerRef}
                 type="button"
-                className="panel-icon-btn h-10 min-w-10 px-0 sm:h-auto sm:min-w-[40px] sm:px-[10px]"
+                className="panel-icon-btn h-10 min-w-10 px-0"
                 title="Import"
                 aria-label="Import"
                 aria-expanded={isImportMenuOpen}
@@ -2535,7 +2535,7 @@ useEffect(() => {
               <button
                 ref={queueDrawerTriggerRef}
                 type="button"
-                className={`panel-icon-btn h-10 min-w-10 px-0 sm:h-auto sm:min-w-[40px] sm:px-[10px] ${isQueueDrawerOpen ? "panel-icon-btn-active" : ""}`}
+                className={`panel-icon-btn h-10 min-w-10 px-0 ${isQueueDrawerOpen ? "panel-icon-btn-active" : ""}`}
                 title="Wiedergabeliste"
                 aria-label="Wiedergabeliste"
                 aria-expanded={isQueueDrawerOpen}
@@ -2553,7 +2553,7 @@ useEffect(() => {
             <div className="relative z-30 justify-self-center sm:justify-self-auto">
               <button
                 ref={filterMenuTriggerRef}
-                className="panel-icon-btn h-10 min-w-10 px-0 sm:h-auto sm:min-w-[40px] sm:px-[10px]"
+                className="panel-icon-btn h-10 min-w-10 px-0"
                 title="Filter Optionen"
                 aria-label="Filter Optionen"
                 onClick={() => setIsFilterMenuOpen((v) => !v)}
