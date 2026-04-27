@@ -2501,7 +2501,7 @@ useEffect(() => {
           ) : null}
           <div className="mb-4 grid grid-cols-4 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-start sm:gap-2 sm:overflow-x-visible sm:pb-1">
             <input
-              className="col-span-4 mx-auto h-10 w-full min-w-0 max-w-[560px] rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff] sm:w-[min(56vw,560px)]"
+              className="col-span-4 mx-auto h-10 w-full min-w-0 max-w-[560px] rounded-2xl border border-[#4a4458] bg-[#2b2930] px-4 text-sm text-[#e6e0e9] placeholder:text-[#938f99] outline-none focus:border-[#d0bcff] sm:mx-0 sm:w-[min(56vw,560px)]"
               value={query}
               onChange={(e) => searchTracks(e.target.value)}
               placeholder="Suche nach Track, Artist, Album"
@@ -3352,7 +3352,7 @@ useEffect(() => {
             </button>
           </div>
 
-          <div className="relative z-10 mx-auto grid h-full min-w-0 max-w-6xl grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-x-hidden overflow-y-auto px-3 pb-[calc(1.85rem+env(safe-area-inset-bottom))] pt-[72px] min-[560px]:grid-cols-[minmax(160px,240px)_1fr] min-[560px]:grid-rows-1 min-[560px]:items-center min-[560px]:gap-4 min-[560px]:overflow-hidden min-[560px]:px-3 min-[560px]:pb-3 min-[560px]:pt-[80px] md:gap-5 md:px-4 md:pb-4 md:pt-[88px] lg:grid-cols-[minmax(220px,320px)_1fr] lg:gap-8 lg:p-8">
+          <div className="relative z-10 mx-auto grid h-full min-w-0 max-w-6xl grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-x-hidden overflow-y-auto px-3 pb-3 pt-[72px] min-[560px]:grid-cols-[minmax(160px,240px)_1fr] min-[560px]:grid-rows-1 min-[560px]:items-center min-[560px]:gap-4 min-[560px]:overflow-hidden min-[560px]:px-3 min-[560px]:pb-3 min-[560px]:pt-[80px] md:gap-5 md:px-4 md:pb-4 md:pt-[88px] lg:grid-cols-[minmax(220px,320px)_1fr] lg:gap-8 lg:p-8">
             <section className="self-start flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[24px] border border-white/15 bg-white/5 p-3 backdrop-blur-2xl min-[560px]:self-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:rounded-[28px] md:p-3.5 lg:p-4">
               {activeTrack ? (
                 <CoverArtSlot
@@ -3376,7 +3376,7 @@ useEffect(() => {
               </div>
             </section>
 
-            <section className="relative -translate-y-1 mb-[calc(1rem+env(safe-area-inset-bottom))] flex min-h-0 min-w-0 flex-col overflow-x-hidden rounded-[24px] border border-white/15 bg-white/5 p-3 pb-[calc(1.35rem+env(safe-area-inset-bottom))] backdrop-blur-2xl min-[560px]:mb-0 min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
+            <section className="relative -translate-y-1 mb-0 flex min-h-0 min-w-0 flex-col overflow-x-hidden rounded-[24px] border border-white/15 bg-white/5 p-3 pb-3 backdrop-blur-2xl min-[560px]:mb-0 min-[560px]:translate-y-0 min-[560px]:max-h-[72vh] min-[560px]:overflow-y-auto min-[560px]:rounded-[24px] min-[560px]:p-3 md:max-h-[70vh] md:rounded-[28px] md:p-4 lg:max-h-[78vh]">
               <div className="flex h-full min-h-0 min-w-0 flex-col gap-2.5 md:gap-3">
               <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5 min-[560px]:gap-2">
                 <div
@@ -3500,6 +3500,7 @@ useEffect(() => {
                   </button>
                 </div>
               </div>
+              <div className="h-[calc(1rem+env(safe-area-inset-bottom))] min-[560px]:hidden" aria-hidden />
               </div>
             </section>
           </div>
