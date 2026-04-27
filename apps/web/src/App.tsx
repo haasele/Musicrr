@@ -3430,7 +3430,7 @@ useEffect(() => {
                   aria-valuemin={0}
                   aria-valuemax={Math.floor(duration > 0 ? duration : (activeTrack?.duration_sec ?? 0))}
                   aria-valuenow={Math.floor(currentTime)}
-                  className="glass-progress relative h-full min-h-[clamp(2.75rem,8vh,4.75rem)] flex-1 w-full cursor-pointer select-none overflow-hidden rounded-2xl border border-white/15 bg-white/5 px-2 py-1 backdrop-blur-2xl min-[560px]:h-[clamp(3rem,7vh,4.75rem)] min-[560px]:min-h-[clamp(3rem,7vh,4.75rem)] min-[560px]:flex-none"
+                  className="glass-progress relative h-[clamp(3rem,7vh,4.75rem)] min-h-[clamp(3rem,7vh,4.75rem)] flex-none w-full cursor-pointer select-none overflow-hidden rounded-2xl border border-white/15 bg-white/5 px-2 py-1 backdrop-blur-2xl min-[560px]:h-[clamp(3rem,7vh,4.75rem)] min-[560px]:min-h-[clamp(3rem,7vh,4.75rem)]"
                   onClick={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     const ratio = (e.clientX - rect.left) / rect.width;
@@ -3465,8 +3465,8 @@ useEffect(() => {
               </div>
 
               <div className="h-8 min-[560px]:hidden" aria-hidden />
-              <div className="relative mt-4 grid w-full min-w-0 max-w-full grid-cols-[1fr_auto_1fr] items-center gap-2 pb-2 min-[560px]:mt-0 min-[560px]:pb-0">
-                <div className="flex items-center justify-end gap-1.5 min-[560px]:gap-2">
+              <div className="relative mt-4 grid w-full min-w-0 max-w-full grid-cols-[1fr_auto_1fr] items-center gap-2 pb-2 min-[500px]:mt-0 min-[500px]:pb-0">
+                <div className="flex items-center justify-end gap-1.5 min-[500px]:gap-2">
                   <button
                     type="button"
                     className={`fullscreen-inline-toggle ${
