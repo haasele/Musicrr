@@ -10,5 +10,10 @@ export default defineConfig({
       "@music/ui": resolve(__dirname, "../../packages/ui/src/index.tsx")
     }
   },
-  server: { port: 3000, host: true }
+  server: {
+    port: 3000,
+    host: true,
+    https: {},
+    allowedHosts: ["musicrr.haasele.dev"]
+  }
 });
