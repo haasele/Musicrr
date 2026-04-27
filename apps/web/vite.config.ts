@@ -1,8 +1,26 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
 
-export default defineConfig({
+const tlsCertPath = process.env.TLS_CERT_PATH?.trim() || "/run/certs/origin-cert.pem";
+const tlsKeyPath = process.env.TLS_KEY_PATH?.trim() || "/run/certs/origin-key.pem";
+const tlsEnabled = process.env.VITE_TLS !== "0";
+
+function getHttpsConfig() {
+  if (!tlsEnabled) return undefined;
+  try {
+    return {
+      cert: readFileSync(tlsCertPath),
+      key: readFileSync(tlsKeyPath)
+    };
+  } catch (err) {
+    const details = err instanceof Error ? err.message : String(err);
+    throw new Error(`TLS enabled but certificate files are not readable (${tlsCertPath}, ${tlsKeyPath}): ${details}`);
+  }
+}
+
+export default defineConfig(({ command }) => ({
   plugins: [react()],
   resolve: {
     alias: {
@@ -11,8 +29,10 @@ export default defineConfig({
     }
   },
   server: {
-    port: 3000,
+    port: 3443,
     host: true,
+    strictPort: true,
+    https: command === "serve" ? getHttpsConfig() : undefined,
     allowedHosts: ["musicrr.haasele.dev", ".haasele.dev"],
     proxy: {
       "/api": {
@@ -27,4 +47,4 @@ export default defineConfig({
       }
     }
   }
-});
+}));
